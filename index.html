@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Monitoreo de dispositivos</title>
+    <style>
+        body { font-family: Arial; max-width: 1000px; margin: auto; }
+        .host-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #f1f1f1;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .status-circle {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .status-up { background-color: green; }
+        .status-down { background-color: red; }
+        .status-paused { background-color: gray; }
+        #statusBar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: #333;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-size: 14px;
+            display: none;
+        }
+
+
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        th.sortable:hover {
+            background-color: #e0e0e0;
+        }
+        .sort-indicator {
+            margin-left: 5px;
+        }
+
+        @keyframes flash-green-white {
+            0% { background-color: #06b40655; }
+            50% { background-color: #06b40690; }
+            100% { background-color: #06b40655; }
+        }
+        @keyframes flash-red-white {
+            0% { background-color: #ff1f1f55; }
+            50% { background-color: #ff1f1f90; }
+            100% { background-color: #ff1f1f55; }
+        }
+        .flashing-up {
+            animation: flash-green-white 1s infinite;
+        }
+        .flashing-down {
+            animation: flash-red-white 1s infinite;
+        }
+
+
+    </style>
+</head>
+<body>
+    <h1>Monitoreo de dispositivos</h1>
+
+    <div id="hostDetailsModal" style="display: none; position: fixed; top: 10%; left: 10%; width: 80%; height: 80%; background: white; border: 1px solid #ddd; overflow: auto; padding: 20px; z-index: 1000; box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2)">
+        <h2>Detalles de host</h2>
+        <button onclick="closeModal()">Close</button>
+        <div id="hostDetailsContent"></div>
+    </div>
+    
+    <div>
+        <form id="addHostForm" onsubmit="addHost(event)">
+            <input type="text" id="newHostAddress" placeholder="Enter host address" required>
+            <button type="submit">Agregar host</button>
+        </form>
+    </div>
+
+    <button onclick="playSound()">Reproducir sonido</button>
+
+    <div>
+        <button onclick="bulkAction('start')">Iniciar</button>
+        <button onclick="bulkAction('stop')">Detener</button>
+        <button onclick="bulkAction('delete')">Eliminar</button>
+        <button onclick="bulkAction('notify_up')">Notificar cuando responde</button>
+        <button onclick="bulkAction('notify_down')">Notificar cuando no responde</button>
+        <button onclick="bulkAction('disable_notify')">Desactivar notificaciones</button>
+        <button id="silenceButton" onclick="toggleSilence()">Silencio</button>
+    </div>
+
+    <table class="host-table">
+        <thead>
+            <tr>
+                <th><input type="checkbox" id="selectAll" onclick="selectAllBoxes(this)"></th>
+                <th>Estado</th>
+                <th>Host</th>
+                <th>Info DNS</th>
+                <th>Porcentaje de respuestas</th>
+                <th>Latencia</th>
+                <th>Modo de notificación</th>
+            </tr>
+        </thead>
+        <tbody id="hosts"></tbody>
+    </table>
+
+    <div id="lastUpdated" style="text-align: center; margin-top: 10px; font-size: 14px; color: #666;">
+        Ultima actualización hace <span id="lastUpdatedTime">0</span> segundos
+    </div>
+    <div id="statusBar"></div>
+
+    <script>
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        const hostsDiv = document.getElementById('hosts');
+        let hostsData = [];
+        const selectedHosts = new Set(); // Store selected rows
+        const statusBar = document.getElementById('statusBar');
+
+        let isSilenced = false;
+        let notificationHosts = [];
+
+        let audioContext = null;
+        let isAudioInitialized = false;
+
+        function initAudio() {
+            if (!isAudioInitialized) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                isAudioInitialized = true;
+            }
+        }
+
+        function playSound() {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 440; // A4 note
+                gainNode.gain.value = 0.5;
+                
+                oscillator.start();
+                setTimeout(() => {
+                    oscillator.stop();
+                }, 500);
+            }
+
+
+        function playBeep() {
+            if (!audioContext || isSilenced) return;
+            
+            // Resume context if suspended
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.2);
+        }
+
+        // Initialize audio on any user interaction
+        document.addEventListener('click', initAudio);
+        document.addEventListener('keypress', initAudio);
+
+        // Single beep interval
+        setInterval(() => {
+            if (notificationHosts.length > 0 && !isSilenced) {
+                playBeep();
+            }
+        }, 2000);
+
+
+        function toggleSilence() {
+            isSilenced = !isSilenced;
+            const button = document.getElementById('silenceButton');
+            button.textContent = isSilenced ? 'Unsilence' : 'Silence';
+            renderHosts(hostsData); // Re-render to update flashing
+        }
+
+        // Update WebSocket handler to track notification hosts
+        ws.onmessage = async (event) => {
+            try {
+                const hosts = typeof event.data === 'string' 
+                    ? JSON.parse(event.data) 
+                    : await event.data.text().then(JSON.parse);
+                hostsData = hosts;
+                notificationHosts = hosts.filter(h => h.needs_notification);
+                renderHosts(hosts);
+            } catch (error) {
+                console.error('Error parsing WebSocket data:', error);
+            }
+        };
+        
+        let currentSort = { column: null, ascending: true };
+
+        function sortHosts(columnKey) {
+            if (currentSort.column === columnKey) {
+                currentSort.ascending = !currentSort.ascending;
+            } else {
+                currentSort.column = columnKey;
+                currentSort.ascending = true;
+            }
+
+            hostsData.sort((a, b) => {
+                const valA = getSortValue(a, columnKey);
+                const valB = getSortValue(b, columnKey);
+                
+                if (valA < valB) return currentSort.ascending ? -1 : 1;
+                if (valA > valB) return currentSort.ascending ? 1 : -1;
+                return 0;
+            });
+
+            renderHosts(hostsData);
+        }
+
+        function getSortValue(host, columnKey) {
+            switch(columnKey) {
+                case 'status':
+                    return host.is_up ? 2 : (host.is_monitoring ? 1 : 0);
+                case 'address':
+                    return host.address;
+                case 'dns':
+                    return host.dns_info || 'zzz';  // Push nulls to end
+                case 'success':
+                    return host.ping_success_rate;
+                case 'latency':
+                    return host.avg_latency ?? Infinity;  // Nulls last
+                case 'notification':
+                    return host.notification_mode;
+                default:
+                    return '';
+            }
+        }
+
+        // Update the table headers to make them sortable
+        function renderHosts(hosts) {
+            // Create a mapping of host IDs for quick lookup.
+            const existingRows = {};
+            hostsDiv.querySelectorAll('tr[data-id]').forEach(row => {
+                existingRows[row.getAttribute('data-id')] = row;
+            });
+            
+            // Loop over the hosts data and update or create rows.
+            hosts.forEach(host => {
+                let row = existingRows[host.id];
+                if (!row) {
+                    // If the row doesn’t exist yet, create it.
+                    row = document.createElement('tr');
+                    row.setAttribute('data-id', host.id);
+                    hostsDiv.appendChild(row);
+                }
+                
+                // Update the flashing classes only if necessary.
+                if (host.needs_notification) {
+                    if (host.is_up) {
+                        if (!row.classList.contains('flashing-up')) {
+                            // Remove the other flashing class if present.
+                            row.classList.remove('flashing-down');
+                            row.classList.add('flashing-up');
+                        }
+                    } else {
+                        if (!row.classList.contains('flashing-down')) {
+                            row.classList.remove('flashing-up');
+                            row.classList.add('flashing-down');
+                        }
+                    }
+                } else {
+                    // Remove any flashing class if notifications are not needed.
+                    row.classList.remove('flashing-up', 'flashing-down');
+                }
+                
+                // Update the inner HTML of the row’s cells.
+                // (Here we update the entire content of the row, but you could be more granular.)
+                row.innerHTML = `
+                    <td><input type="checkbox" class="select-host" data-id="${host.id}" ${selectedHosts.has(host.id) ? 'checked' : ''}></td>
+                    <td>
+                        <div class="status-circle ${!host.is_monitoring ? 'status-paused' : host.is_up ? 'status-up' : 'status-down'}"></div>
+                    </td>
+                    <td>${host.address}</td>
+                    <td>${host.dns_info || "N/A"}</td>
+                    <td>${host.ping_success_rate?.toFixed(0) ?? 0}%</td>
+                    <td>${host.avg_latency ? host.avg_latency.toFixed(2) + 'ms' : 'N/A'}</td>
+                    <td>${formatNotificationMode(host.notification_mode)}</td>
+                    <td><button onclick="viewHostDetails('${host.id}')">Más info</button></td>
+                `;
+                
+                // Reattach the event listener for the checkbox.
+                const checkbox = row.querySelector('.select-host');
+                checkbox.addEventListener('change', event => {
+                    const hostId = event.target.dataset.id;
+                    event.target.checked ? selectedHosts.add(hostId) : selectedHosts.delete(hostId);
+                });
+            });
+            
+            // Optionally, remove rows that are no longer in the hosts data.
+            const hostIds = hosts.map(h => h.id);
+            hostsDiv.querySelectorAll('tr[data-id]').forEach(row => {
+                if (!hostIds.includes(row.getAttribute('data-id'))) {
+                    row.remove();
+                }
+            });
+
+            // Add sort indicators
+            document.querySelectorAll('th').forEach(header => {
+                header.classList.remove('sortable');
+                const match = header.textContent.toLowerCase().match(/(status|address|dns info|success rate|latency|notification mode)/);
+                if (match) {
+                    const columnKey = match[0].replace(' ', '_');
+                    header.classList.add('sortable');
+                    header.innerHTML = `${header.textContent}${currentSort.column === columnKey ? 
+                        `<span class="sort-indicator">${currentSort.ascending ? '▲' : '▼'}</span>` : ''}`;
+                    header.onclick = () => sortHosts(columnKey);
+                }
+            });
+        }
+
+        function formatNotificationMode(mode) {
+            switch(mode) {
+                case 'notify_up': return 'Notificar cuando responde';
+                case 'notify_down': return 'Notificar cuando no responde';
+                case 'disabled': return 'Desactivadas';
+                default: return 'Unknown';
+            }
+        }
+        async function deleteHost(hostId) {
+            showStatusBar('Eliminando host...');
+            try {
+                const response = await fetch(`/hosts/${hostId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    // Optionally update the UI by removing the host from the DOM or refreshing the data
+                    selectedHosts.delete(hostId);
+                    ws.send('refresh'); // Notify the WebSocket server to refresh
+                } else {
+                    throw new Error('Error al eliminar host');
+                }
+            } catch (error) {
+                console.error('Error eliminando host:', error);
+                alert(`Error: ${error.message}`);
+            } finally {
+                hideStatusBar();
+            }
+        }
+
+        async function bulkAction(action) {
+            if (selectedHosts.size === 0) {
+                showStatusBar('Ningún host seleccionado');
+                setTimeout(hideStatusBar, 2000);
+                return;
+            }
+
+            let message;
+            switch(action) {
+                case 'delete':
+                    message = 'Eliminando hosts...';
+                    break;
+                case 'start':
+                    message = 'Iniciando monitoreo...';
+                    break;
+                case 'stop':
+                    message = 'Deteniendo monitoreo...';
+                    break;
+                case 'notify_up':
+                    message = 'Configruando para notificar cuando responde...';
+                    break;
+                case 'notify_down':
+                    message = 'Configruando para notificar cuando no responde...';
+                    break;
+                case 'disable_notify':
+                    message = 'Desactivando notificaciones...';
+                    break;
+            }
+            
+            showStatusBar(message);
+
+            const promises = Array.from(selectedHosts).map(async hostId => {
+                if (action === 'delete') {
+                    return deleteHost(hostId);
+                } else if (action === 'start' || action === 'stop') {
+                    return toggleMonitoring(hostId, action === 'start');
+                } else if (['notify_up', 'notify_down', 'disable_notify'].includes(action)) {
+                    const mode = action === 'disable_notify' ? 'disabled' : action;
+                    return updateNotificationMode(hostId, mode);
+                }
+            });
+
+            try {
+                await Promise.all(promises);
+                showStatusBar('Acción completada con éxito');
+            } catch (error) {
+                showStatusBar('Error: ' + error.message);
+            } finally {
+                setTimeout(hideStatusBar, 2000);
+            }
+        }
+
+        function selectAllBoxes(checkbox) {
+            const isChecked = checkbox.checked;
+            document.querySelectorAll('.select-host').forEach(cb => {
+                cb.checked = isChecked;
+                const hostId = cb.dataset.id;
+                if (isChecked) {
+                    selectedHosts.add(hostId);
+                } else {
+                    selectedHosts.clear();
+                }
+            });
+        }
+
+        ws.onopen = () => {
+            fetch('/hosts')
+                .then(response => response.json())
+                .then(hosts => {
+                    hostsData = hosts;
+                    renderHosts(hostsData);
+                });
+        };
+
+        ws.onmessage = function(event) {
+            hostsData = JSON.parse(event.data);
+            renderHosts(hostsData);
+        };
+
+        function toggleMonitoring(hostId, start) {
+            fetch(`/hosts/${hostId}/toggle-monitoring`, {
+                method: 'PUT',
+            });
+        }
+
+
+        function viewHostDetails(hostId) {
+            fetch(`/hosts/${hostId}/details`)
+                .then(response => response.json())
+                .then(data => {
+                    const detailsContent = document.getElementById('hostDetailsContent');
+                    detailsContent.innerHTML = `
+                        <h3>Host: ${data.address}</h3>
+                        <p><strong>Status:</strong> ${data.is_up ? 'Up' : 'Down'}</p>
+                        <p><strong>Success Rate:</strong> ${data.statistics.success_rate.toFixed(2)}%</p>
+                        <p><strong>Average Latency:</strong> ${data.statistics.average_latency ? data.statistics.average_latency.toFixed(2) + 'ms' : 'N/A'}</p>
+                        <h4>Response Log</h4>
+                        <ul>
+                            ${data.response_log.map(log => `
+                                <li>
+                                    <strong>Timestamp:</strong> ${log.timestamp}, 
+                                    <strong>Success:</strong> ${log.success}, 
+                                    <strong>Latency:</strong> ${log.latency ? log.latency.toFixed(2) + 'ms' : 'N/A'}
+                                </li>
+                            `).join('')}
+                        </ul>
+                    `;
+                    document.getElementById('hostDetailsModal').style.display = 'block';
+                });
+        }
+
+        
+
+        function closeModal() {
+            document.getElementById('hostDetailsModal').style.display = 'none';
+        }
+        
+        function showStatusBar(message) {
+            statusBar.textContent = message;
+            statusBar.style.display = 'block';
+        }
+
+        function hideStatusBar() {
+            statusBar.style.display = 'none';
+        }
+        
+        async function addHost(event) {
+            event.preventDefault();
+            const address = document.getElementById('newHostAddress').value;
+            showStatusBar('Adding host...');
+            try {
+                const response = await fetch('/hosts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ address })
+                });
+                document.getElementById('newHostAddress').value = ''; // Clear input
+                if (!response.ok) throw new Error('Failed to add host');
+            } catch (error) {
+                showStatusBar(`Error: ${error.message}`);
+                setTimeout(hideStatusBar, 2000);
+            }
+        }
+
+        async function updateNotificationMode(hostId, mode) {
+            try {
+                const response = await fetch(`/hosts/${hostId}/notification-mode?mode=${mode}`, {
+                    method: 'PUT'
+                });
+                if (!response.ok) throw new Error('Failed to update notification mode');
+            } catch (error) {
+                console.error('Error updating notification mode:', error);
+                showStatusBar('Error updating notification mode');
+                setTimeout(hideStatusBar, 2000);
+            }
+        }
+
+        async function removeHost(hostId) {
+            showStatusBar('Eliminando host...');
+            try {
+                const response = await fetch(`/hosts/${hostId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    ws.send('refresh'); // Optionally notify server to refresh data
+                }
+            } catch (error) {
+                alert('Error al eliminar el host');
+            } finally {
+                hideStatusBar();
+            }
+        }
+        let lastUpdateTime = Date.now();
+
+    function updateLastUpdatedTime() {
+        const elapsedSeconds = Math.floor((Date.now() - lastUpdateTime) / 1000);
+        document.getElementById('lastUpdatedTime').textContent = elapsedSeconds;
+    }
+
+    setInterval(updateLastUpdatedTime, 1000);
+
+    ws.onmessage = async (event) => {
+        try {
+            const hosts = typeof event.data === 'string' 
+                ? JSON.parse(event.data) 
+                : await event.data.text().then(JSON.parse);
+            hostsData = hosts;
+            notificationHosts = hosts.filter(h => h.needs_notification);
+            renderHosts(hosts);
+            lastUpdateTime = Date.now(); // Reset timer when data is received
+        } catch (error) {
+            console.error('Error al parsear datos de WebSocket:', error);
+        }
+    };
+
+    </script>
+</body>
+</html>
