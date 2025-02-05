@@ -4,6 +4,81 @@
     <title>TeamPing</title>
     <style>
         body { font-family: Arial; max-width: 1000px; margin: auto; }
+
+        .controls {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            height: 40px;
+            align-items: center;
+        }
+        @media (min-width: 600px) {
+            .control-row {
+                flex-wrap: nowrap;
+            }
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            width: 100%;
+            max-width: 300px;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+            height: 40px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #007BFF;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f5f5f5;;
+            color: black;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        button:hover {
+            background-color: darkgrey;
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .notification-dropdown summary:hover {
+            background-color: #e0e0e0;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .control-row {
+                flex-direction: column;
+                align-items: center;
+            }
+            button, input[type="text"] {
+                max-width: 100%;
+            }
+        }
         .host-table {
             width: 100%;
             border-collapse: collapse;
@@ -65,7 +140,7 @@
             100% { background-color: #ff1f1f55; }
         }
         .flashing-up {
-            animation: flash-green-white 1s infinite;
+            animation: flash-green-white 2s infinite;
         }
         .flashing-down {
             animation: flash-red-white 1s infinite;
@@ -97,10 +172,6 @@
             transition: background-color 0.2s;
         }
 
-        .notification-dropdown summary::-webkit-details-marker {
-            display: none;
-        }
-
         .notification-dropdown[open] summary {
             background-color: #e0e0e0;
         }
@@ -130,6 +201,7 @@
             border: none;
             border-radius: 3px;
             cursor: pointer;
+            color: black;
         }
 
         .dropdown-content button:hover {
@@ -139,44 +211,127 @@
         #silenceButton {
             margin-left: auto;
         }
+        form#addHostForm {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
 
+        #addHostForm button {
+            height: 40px;
+        }
+        .control-row.combined {
+            justify-content: space-between;
+        }
 
+        .modal {
+            display: none;               /* Hidden by default */
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%;
+            overflow: auto;              /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.5); /* Black background with opacity */
+            }
+
+            /* Modal Content/Box */
+            .modal-content {
+            background-color: #fff;
+            margin: 10% auto;            /* 10% from the top and centered */
+            padding: 20px;
+            border-radius: 5px;
+            width: 80%;                  /* Could be more or less, depending on screen size */
+            max-width: 600px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            }
+
+            /* The Close Button */
+            .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            }
+
+            .close-button:hover,
+            .close-button:focus {
+            color: #000;
+            text-decoration: none;
+            }
+
+        .grey-button {
+            border: 1px solid black;
+            background-color: #f5f5f5;
+            color: #333; 
+            border-radius: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .grey-button:hover {
+            background-color: darkgrey;
+        }
+
+        button[onclick^="viewHostDetails"] {
+            height: 25px;
+            width: 25px;
+            background-color: #f5f5f5;
+            color: #333;
+            border: 1px solid black;
+            padding: 0 0px;
+            text-align: left;
+        }
+
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
     </style>
 </head>
 <body>
+    <div id="hostDetailsModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal()">&times;</span>
+            <div id="hostDetailsContent">
+                <span onclick="closeModal()" 
+                    style="position: absolute; top: 10px; right: 15px; cursor: pointer; font-size: 24px;">&times;</span>
+            </div>
+        </div>
+    </div>
     <h1>TeamPing</h1>
-    <input type="text" id="searchBox" placeholder="Filtrar" oninput="filterHosts(this.value)">
-    <div id="hostDetailsModal" style="display: none; position: fixed; top: 10%; left: 10%; width: 80%; height: 80%; background: white; border: 1px solid #ddd; overflow: auto; padding: 20px; z-index: 1000; box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2)">
-        <h2>Detalles de host</h2>
-        <button onclick="closeModal()">Close</button>
-        <div id="hostDetailsContent"></div>
-    </div>
-    
-    <div>
-        <form id="addHostForm" onsubmit="addHost(event)">
-            <input type="text" id="newHostAddress" placeholder="Ingresar nombre o IP" required>
-            <button type="submit">Agregar host</button>
-        </form>
-    </div>
-
-    <div class="button-group">
-        <div class="action-buttons">
-            <button onclick="bulkAction('start')">Iniciar</button>
-            <button onclick="bulkAction('stop')">Pausar</button>
-            <button onclick="bulkAction('delete')">Eliminar</button>
+    <div class="controls">
+        <div class="control-row combined">
+            <input type="text" id="searchBox" placeholder="🔍 Filtrar" oninput="filterHosts(this.value)">
+            <form id="addHostForm" onsubmit="addHost(event)">
+                <input type="text" id="newHostAddress" placeholder="Ingresar nombre o IP" required>
+                <button type="submit" class="grey-button">➕</button>
+            </form>
         </div>
         
-        <details class="notification-dropdown">
-            <summary>Notificaciones ▼</summary>
-            <div class="dropdown-content">
-                <button onclick="bulkAction('notify_up')">Notificar cuando responde</button>
-                <button onclick="bulkAction('notify_down')">Notificar cuando no responde</button>
-                <button onclick="bulkAction('disable_notify')">Desactivar notificaciones</button>
-            </div>
-        </details>
         
-        <button id="silenceButton" onclick="toggleSilence()">Silencio</button>
+        <div class="control-row">
+            <div class="action-buttons">
+                <button onclick="bulkAction('start')">▶️ Iniciar</button>
+                <button onclick="bulkAction('stop')">⏹️ Detener</button>
+                <button onclick="bulkAction('delete')">🗑️ Eliminar</button>
+            </div>
+            <details class="notification-dropdown">
+                <summary>🔔 Notificaciones ▼</summary>
+                <div class="dropdown-content">
+                    <button onclick="bulkAction('notify_up')">Notificar cuando responde</button>
+                    <button onclick="bulkAction('notify_down')">Notificar cuando no responde</button>
+                    <button onclick="bulkAction('disable_notify')">Desactivar notificaciones</button>
+                </div>
+            </details>
+            <button id="silenceButton" onclick="toggleSilence()">🔇</button>
+        </div>
     </div>
+
 
     <table class="host-table">
         <thead>
@@ -260,24 +415,9 @@
         function toggleSilence() {
             isSilenced = !isSilenced;
             const button = document.getElementById('silenceButton');
-            button.textContent = isSilenced ? 'Unsilence' : 'Silence';
+            button.innerHTML = isSilenced ? '🔊' : '🔇';
             renderHosts(hostsData); // Re-render to update flashing
         }
-
-        // Update WebSocket handler to track notification hosts
-        ws.onmessage = async (event) => {
-            try {
-                const hosts = typeof event.data === 'string' 
-                    ? JSON.parse(event.data) 
-                    : await event.data.text().then(JSON.parse);
-                hostsData = hosts;
-                notificationHosts = hosts.filter(h => h.needs_notification);
-                renderHosts(hosts);
-            } catch (error) {
-                console.error('Error parsing WebSocket data:', error);
-            }
-        };
-        
 
         // Update the table headers to make them sortable
         function renderHosts(hosts) {
@@ -332,7 +472,7 @@
                     <td>${host.ping_success_rate?.toFixed(0) ?? 0}%</td>
                     <td>${host.avg_latency ? host.avg_latency.toFixed(2) + 'ms' : 'N/A'}</td>
                     <td>${formatNotificationMode(host.notification_mode)}</td>
-                    <td><button onclick="viewHostDetails('${host.id}')">Más info</button></td>
+                    <td><button onclick="viewHostDetails('${host.id}')">ℹ️</button></td>
                 `;
 
                 // Attach the checkbox event listener
@@ -359,10 +499,11 @@
             switch(mode) {
                 case 'notify_up': return 'Notificar cuando responde';
                 case 'notify_down': return 'Notificar cuando no responde';
-                case 'disabled': return 'Desactivadas';
+                case 'disabled': return 'Desactivada';
                 default: return 'Unknown';
             }
         }
+
         async function deleteHost(hostId) {
             showStatusBar('Eliminando host...');
             try {
@@ -401,10 +542,10 @@
                     message = 'Deteniendo monitoreo...';
                     break;
                 case 'notify_up':
-                    message = 'Configruando para notificar cuando responde...';
+                    message = 'Configurando para notificar cuando responde...';
                     break;
                 case 'notify_down':
-                    message = 'Configruando para notificar cuando no responde...';
+                    message = 'Configurando para notificar cuando no responde...';
                     break;
                 case 'disable_notify':
                     message = 'Desactivando notificaciones...';
@@ -433,17 +574,12 @@
                 setTimeout(hideStatusBar, 2000);
             }
         }
-
         function selectAllBoxes(checkbox) {
             const isChecked = checkbox.checked;
             document.querySelectorAll('.select-host').forEach(cb => {
                 cb.checked = isChecked;
                 const hostId = cb.dataset.id;
-                if (isChecked) {
-                    selectedHosts.add(hostId);
-                } else {
-                    selectedHosts.clear();
-                }
+                isChecked ? selectedHosts.add(hostId) : selectedHosts.delete(hostId);
             });
         }
 
@@ -454,11 +590,6 @@
                     hostsData = hosts;
                     renderHosts(hostsData);
                 });
-        };
-
-        ws.onmessage = function(event) {
-            hostsData = JSON.parse(event.data);
-            renderHosts(hostsData);
         };
 
         function toggleMonitoring(hostId, start) {
@@ -491,31 +622,6 @@
                     `;
                     document.getElementById('hostDetailsModal').style.display = 'block';
                 });
-        }
-
-        function filterTable() {
-            let input = document.getElementById("searchBox").value.toLowerCase();
-            let rows = document.querySelectorAll("#host-table tbody tr");
-            rows.forEach(row => {
-                let text = row.innerText.toLowerCase();
-                row.style.display = text.includes(input) ? "" : "none";
-            });
-        }
-
-        function sortTable(columnIndex) {
-            let table = document.getElementById("hostsTable");
-            let tbody = table.getElementsByTagName("tbody")[0];
-            let rows = Array.from(tbody.getElementsByTagName("tr"));
-            let ascending = table.dataset.sortOrder !== "asc";
-            
-            rows.sort((a, b) => {
-                let textA = a.cells[columnIndex].innerText.toLowerCase();
-                let textB = b.cells[columnIndex].innerText.toLowerCase();
-                return ascending ? textA.localeCompare(textB) : textB.localeCompare(textA);
-            });
-            
-            rows.forEach(row => tbody.appendChild(row));
-            table.dataset.sortOrder = ascending ? "asc" : "desc";
         }
 
         function closeModal() {
@@ -562,19 +668,6 @@
             }
         }
 
-        async function removeHost(hostId) {
-            showStatusBar('Eliminando host...');
-            try {
-                const response = await fetch(`/hosts/${hostId}`, { method: 'DELETE' });
-                if (response.ok) {
-                    ws.send('refresh'); // Optionally notify server to refresh data
-                }
-            } catch (error) {
-                alert('Error al eliminar el host');
-            } finally {
-                hideStatusBar();
-            }
-        }
         let lastUpdateTime = Date.now();
 
     function updateLastUpdatedTime() {
@@ -584,17 +677,15 @@
 
     setInterval(updateLastUpdatedTime, 1000);
 
-    ws.onmessage = async (event) => {
+    ws.onmessage = (event) => {
         try {
-            const hosts = typeof event.data === 'string' 
-                ? JSON.parse(event.data) 
-                : await event.data.text().then(JSON.parse);
+            const hosts = JSON.parse(event.data);
             hostsData = hosts;
             notificationHosts = hosts.filter(h => h.needs_notification);
             renderHosts(hosts);
-            lastUpdateTime = Date.now(); // Reset timer when data is received
+            lastUpdateTime = Date.now();
         } catch (error) {
-            console.error('Error al parsear datos de WebSocket:', error);
+            console.error('Error parsing WebSocket data:', error);
         }
     };
 
@@ -651,5 +742,7 @@
     }
 
     </script>
+
+
 </body>
 </html>
