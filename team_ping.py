@@ -549,6 +549,7 @@ async def main():
             pass
 
     logger.info("Clean shutdown complete")
+    input("Press Enter to exit...")
 
 # Configurar el event loop adecuado en Windows
 if sys.platform == "win32":
