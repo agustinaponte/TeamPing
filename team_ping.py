@@ -283,7 +283,12 @@ class HostMonitor:
                         address=host_address
                     )
         except FileNotFoundError:
-            logger.warning(f"Hosts file {filename} not found. Starting with empty host list.")
+            logger.warning(f"Hosts file {filename} not found. Creating a new one.")
+            # Create an empty hosts file
+            with open(filename, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([])  # Write an empty row to create the file
+            self.hosts = {}  # Initialize with an empty host list
 
     def save_hosts(self, filename='hosts.csv'):
         with open(filename, 'w', newline='') as f:
