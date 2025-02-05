@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Monitoreo de dispositivos</title>
+    <title>TeamPing</title>
     <style>
         body { font-family: Arial; max-width: 1000px; margin: auto; }
         .host-table {
@@ -70,13 +70,82 @@
         .flashing-down {
             animation: flash-red-white 1s infinite;
         }
+        .button-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .notification-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .notification-dropdown summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 6px 12px;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .notification-dropdown summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .notification-dropdown[open] summary {
+            background-color: #e0e0e0;
+        }
+
+        .notification-dropdown .dropdown-content {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 5px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            min-width: 200px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-top: 5px;
+        }
+
+        .dropdown-content button {
+            width: 100%;
+            text-align: left;
+            padding: 6px 12px;
+            background: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .dropdown-content button:hover {
+            background-color: #f5f5f5;
+        }
+
+        #silenceButton {
+            margin-left: auto;
+        }
 
 
     </style>
 </head>
 <body>
-    <h1>Monitoreo de dispositivos</h1>
-
+    <h1>TeamPing</h1>
+    <input type="text" id="searchBox" placeholder="Filtrar" oninput="filterHosts(this.value)">
     <div id="hostDetailsModal" style="display: none; position: fixed; top: 10%; left: 10%; width: 80%; height: 80%; background: white; border: 1px solid #ddd; overflow: auto; padding: 20px; z-index: 1000; box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2)">
         <h2>Detalles de host</h2>
         <button onclick="closeModal()">Close</button>
@@ -85,20 +154,27 @@
     
     <div>
         <form id="addHostForm" onsubmit="addHost(event)">
-            <input type="text" id="newHostAddress" placeholder="Enter host address" required>
+            <input type="text" id="newHostAddress" placeholder="Ingresar nombre o IP" required>
             <button type="submit">Agregar host</button>
         </form>
     </div>
 
-    <button onclick="playSound()">Reproducir sonido</button>
-
-    <div>
-        <button onclick="bulkAction('start')">Iniciar</button>
-        <button onclick="bulkAction('stop')">Detener</button>
-        <button onclick="bulkAction('delete')">Eliminar</button>
-        <button onclick="bulkAction('notify_up')">Notificar cuando responde</button>
-        <button onclick="bulkAction('notify_down')">Notificar cuando no responde</button>
-        <button onclick="bulkAction('disable_notify')">Desactivar notificaciones</button>
+    <div class="button-group">
+        <div class="action-buttons">
+            <button onclick="bulkAction('start')">Iniciar</button>
+            <button onclick="bulkAction('stop')">Pausar</button>
+            <button onclick="bulkAction('delete')">Eliminar</button>
+        </div>
+        
+        <details class="notification-dropdown">
+            <summary>Notificaciones ▼</summary>
+            <div class="dropdown-content">
+                <button onclick="bulkAction('notify_up')">Notificar cuando responde</button>
+                <button onclick="bulkAction('notify_down')">Notificar cuando no responde</button>
+                <button onclick="bulkAction('disable_notify')">Desactivar notificaciones</button>
+            </div>
+        </details>
+        
         <button id="silenceButton" onclick="toggleSilence()">Silencio</button>
     </div>
 
@@ -106,12 +182,12 @@
         <thead>
             <tr>
                 <th><input type="checkbox" id="selectAll" onclick="selectAllBoxes(this)"></th>
-                <th>Estado</th>
-                <th>Host</th>
-                <th>Info DNS</th>
-                <th>Porcentaje de respuestas</th>
-                <th>Latencia</th>
-                <th>Modo de notificación</th>
+                <th class="sortable" data-sort-key="status">Estado</th>
+                <th class="sortable" data-sort-key="address">Host</th>
+                <th class="sortable" data-sort-key="dns_info">Info DNS</th>
+                <th class="sortable" data-sort-key="ping_success_rate">Porcentaje de respuestas</th>
+                <th class="sortable" data-sort-key="avg_latency">Latencia</th>
+                <th class="sortable" data-sort-key="notification_mode">Modo de notificación</th>
             </tr>
         </thead>
         <tbody id="hosts"></tbody>
@@ -135,30 +211,16 @@
         let audioContext = null;
         let isAudioInitialized = false;
 
+        let currentFilter = '';
+        let currentSortColumn = null;
+        let sortDirection = 'asc';
+
         function initAudio() {
             if (!isAudioInitialized) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 isAudioInitialized = true;
             }
         }
-
-        function playSound() {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                
-                oscillator.type = 'sine';
-                oscillator.frequency.value = 440; // A4 note
-                gainNode.gain.value = 0.5;
-                
-                oscillator.start();
-                setTimeout(() => {
-                    oscillator.stop();
-                }, 500);
-            }
 
 
         function playBeep() {
@@ -176,7 +238,7 @@
             gainNode.connect(audioContext.destination);
             
             oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(1200, audioContext.currentTime);
             gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
             
             oscillator.start();
@@ -216,86 +278,50 @@
             }
         };
         
-        let currentSort = { column: null, ascending: true };
-
-        function sortHosts(columnKey) {
-            if (currentSort.column === columnKey) {
-                currentSort.ascending = !currentSort.ascending;
-            } else {
-                currentSort.column = columnKey;
-                currentSort.ascending = true;
-            }
-
-            hostsData.sort((a, b) => {
-                const valA = getSortValue(a, columnKey);
-                const valB = getSortValue(b, columnKey);
-                
-                if (valA < valB) return currentSort.ascending ? -1 : 1;
-                if (valA > valB) return currentSort.ascending ? 1 : -1;
-                return 0;
-            });
-
-            renderHosts(hostsData);
-        }
-
-        function getSortValue(host, columnKey) {
-            switch(columnKey) {
-                case 'status':
-                    return host.is_up ? 2 : (host.is_monitoring ? 1 : 0);
-                case 'address':
-                    return host.address;
-                case 'dns':
-                    return host.dns_info || 'zzz';  // Push nulls to end
-                case 'success':
-                    return host.ping_success_rate;
-                case 'latency':
-                    return host.avg_latency ?? Infinity;  // Nulls last
-                case 'notification':
-                    return host.notification_mode;
-                default:
-                    return '';
-            }
-        }
 
         // Update the table headers to make them sortable
         function renderHosts(hosts) {
-            // Create a mapping of host IDs for quick lookup.
-            const existingRows = {};
-            hostsDiv.querySelectorAll('tr[data-id]').forEach(row => {
-                existingRows[row.getAttribute('data-id')] = row;
+            let filteredHosts = hosts.filter(host => {
+                const searchText = currentFilter;
+                return (
+                    host.address.toLowerCase().includes(searchText) ||
+                    (host.dns_info || '').toLowerCase().includes(searchText) ||
+                    (host.ping_success_rate?.toString() || '').includes(searchText) ||
+                    (host.avg_latency?.toString() || '').includes(searchText) ||
+                    formatNotificationMode(host.notification_mode).toLowerCase().includes(searchText)
+                );
             });
-            
-            // Loop over the hosts data and update or create rows.
-            hosts.forEach(host => {
-                let row = existingRows[host.id];
-                if (!row) {
-                    // If the row doesn’t exist yet, create it.
-                    row = document.createElement('tr');
-                    row.setAttribute('data-id', host.id);
-                    hostsDiv.appendChild(row);
-                }
-                
-                // Update the flashing classes only if necessary.
+
+            // Sort hosts
+            if (currentSortColumn) {
+                filteredHosts.sort((a, b) => {
+                    const valueA = getSortableValue(a, currentSortColumn);
+                    const valueB = getSortableValue(b, currentSortColumn);
+                    
+                    if (typeof valueA === 'string') {
+                        return sortDirection === 'asc' 
+                            ? valueA.localeCompare(valueB)
+                            : valueB.localeCompare(valueA);
+                    }
+                    return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+                });
+            }
+            hostsDiv.innerHTML = "";
+
+            // Create a mapping of host IDs for quick lookup.
+            filteredHosts.forEach(host => {
+                const row = document.createElement('tr');
+                row.setAttribute('data-id', host.id);
+
+                // Apply flashing classes if needed.
                 if (host.needs_notification) {
                     if (host.is_up) {
-                        if (!row.classList.contains('flashing-up')) {
-                            // Remove the other flashing class if present.
-                            row.classList.remove('flashing-down');
-                            row.classList.add('flashing-up');
-                        }
+                        row.classList.add('flashing-up');
                     } else {
-                        if (!row.classList.contains('flashing-down')) {
-                            row.classList.remove('flashing-up');
-                            row.classList.add('flashing-down');
-                        }
+                        row.classList.add('flashing-down');
                     }
-                } else {
-                    // Remove any flashing class if notifications are not needed.
-                    row.classList.remove('flashing-up', 'flashing-down');
                 }
-                
-                // Update the inner HTML of the row’s cells.
-                // (Here we update the entire content of the row, but you could be more granular.)
+
                 row.innerHTML = `
                     <td><input type="checkbox" class="select-host" data-id="${host.id}" ${selectedHosts.has(host.id) ? 'checked' : ''}></td>
                     <td>
@@ -308,33 +334,23 @@
                     <td>${formatNotificationMode(host.notification_mode)}</td>
                     <td><button onclick="viewHostDetails('${host.id}')">Más info</button></td>
                 `;
-                
-                // Reattach the event listener for the checkbox.
+
+                // Attach the checkbox event listener
                 const checkbox = row.querySelector('.select-host');
                 checkbox.addEventListener('change', event => {
                     const hostId = event.target.dataset.id;
                     event.target.checked ? selectedHosts.add(hostId) : selectedHosts.delete(hostId);
                 });
+
+                hostsDiv.appendChild(row);
             });
-            
+
+
             // Optionally, remove rows that are no longer in the hosts data.
             const hostIds = hosts.map(h => h.id);
             hostsDiv.querySelectorAll('tr[data-id]').forEach(row => {
                 if (!hostIds.includes(row.getAttribute('data-id'))) {
                     row.remove();
-                }
-            });
-
-            // Add sort indicators
-            document.querySelectorAll('th').forEach(header => {
-                header.classList.remove('sortable');
-                const match = header.textContent.toLowerCase().match(/(status|address|dns info|success rate|latency|notification mode)/);
-                if (match) {
-                    const columnKey = match[0].replace(' ', '_');
-                    header.classList.add('sortable');
-                    header.innerHTML = `${header.textContent}${currentSort.column === columnKey ? 
-                        `<span class="sort-indicator">${currentSort.ascending ? '▲' : '▼'}</span>` : ''}`;
-                    header.onclick = () => sortHosts(columnKey);
                 }
             });
         }
@@ -477,7 +493,30 @@
                 });
         }
 
-        
+        function filterTable() {
+            let input = document.getElementById("searchBox").value.toLowerCase();
+            let rows = document.querySelectorAll("#host-table tbody tr");
+            rows.forEach(row => {
+                let text = row.innerText.toLowerCase();
+                row.style.display = text.includes(input) ? "" : "none";
+            });
+        }
+
+        function sortTable(columnIndex) {
+            let table = document.getElementById("hostsTable");
+            let tbody = table.getElementsByTagName("tbody")[0];
+            let rows = Array.from(tbody.getElementsByTagName("tr"));
+            let ascending = table.dataset.sortOrder !== "asc";
+            
+            rows.sort((a, b) => {
+                let textA = a.cells[columnIndex].innerText.toLowerCase();
+                let textB = b.cells[columnIndex].innerText.toLowerCase();
+                return ascending ? textA.localeCompare(textB) : textB.localeCompare(textA);
+            });
+            
+            rows.forEach(row => tbody.appendChild(row));
+            table.dataset.sortOrder = ascending ? "asc" : "desc";
+        }
 
         function closeModal() {
             document.getElementById('hostDetailsModal').style.display = 'none';
@@ -558,6 +597,58 @@
             console.error('Error al parsear datos de WebSocket:', error);
         }
     };
+
+    document.querySelectorAll('th.sortable').forEach(header => {
+        header.dataset.originalText = header.textContent;
+        header.addEventListener('click', () => handleSort(header.dataset.sortKey));
+    });
+
+    function filterHosts(query) {
+        currentFilter = query.toLowerCase();
+        renderHosts(hostsData);
+    }
+
+    function handleSort(sortKey) {
+        if (currentSortColumn === sortKey) {
+            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            currentSortColumn = sortKey;
+            sortDirection = 'asc';
+        }
+        updateSortIndicators();
+        renderHosts(hostsData);
+    }
+
+    function updateSortIndicators() {
+        document.querySelectorAll('th.sortable').forEach(header => {
+            const originalText = header.dataset.originalText;
+            if (header.dataset.sortKey === currentSortColumn) {
+                header.innerHTML = `${originalText} <span class="sort-indicator">${sortDirection === 'asc' ? '↑' : '↓'}</span>`;
+            } else {
+                header.textContent = originalText;
+            }
+        });
+    }
+
+    function getSortableValue(host, sortKey) {
+        switch(sortKey) {
+            case 'status':
+                if (!host.is_monitoring) return 0;
+                return host.is_up ? 2 : 1;
+            case 'address':
+                return host.address.toLowerCase();
+            case 'dns_info':
+                return (host.dns_info || '').toLowerCase();
+            case 'ping_success_rate':
+                return host.ping_success_rate || 0;
+            case 'avg_latency':
+                return host.avg_latency ?? Infinity;
+            case 'notification_mode':
+                return formatNotificationMode(host.notification_mode).toLowerCase();
+            default:
+                return '';
+        }
+    }
 
     </script>
 </body>
