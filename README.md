@@ -14,39 +14,17 @@ Ideal para equipos de infraestructura IT y profesionales del área, **TeamPing**
 - 🌐 **API REST:** Permite agregar, eliminar y configurar hosts mediante solicitudes HTTP.  
 
 ---
+## 📥 Instrucciones de uso
 
-## 📌 Requisitos
+Descargar la última versión y ejecutarla como administrador. La interfaz web estará disponible en http://localhost:9123
 
-🔹 **Debe ejecutarse como Administrador:** La aplicación crea sus propios paquetes ICMP.  
-🔹 **Python 3.8+**  
+La aplicación busca un archivo hosts.csv en el directorio de ejecución y lo crea si no existe. Este archivo mantiene una lista de los hosts que deben ser monitoreados.
+
+Tambien genera un archivo host_monitor.log para registrar la actividad de la aplicación.
 
 ---
 
-## 📥 Instalación
-
-### 1️⃣ Clona el Repositorio:
-
-```
-git clone https://github.com/agustinaponte/TeamPing.git
-cd TeamPing
-```
-### 2️⃣ Crea un Entorno Virtual (Opcional, pero Recomendado):
-```
-python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
-```
-### 3️⃣ Instala las Dependencias:
-```
-pip install -r requirements.txt
-```
-### 4️⃣ Ejecuta la Aplicación como Administrador
-Abre una consola como administrador y ejecuta la aplicación
-```
-python team_ping.py
-```
----
-
-🖥️ Uso y Endpoints de la API
+## 🖥️ Uso y Endpoints de la API
 
 La aplicación ofrece tanto una interfaz web como endpoints RESTful para la gestión de hosts.
 
