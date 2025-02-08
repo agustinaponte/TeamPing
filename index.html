@@ -5,6 +5,18 @@
     <style>
         body { font-family: Arial; max-width: 1000px; margin: auto; }
 
+        .control-row button {
+            height: 35px;
+            padding: 5px 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f5f5f5;
+            color: black;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
         .controls {
             max-width: 800px;
             margin: 20px auto;
@@ -20,6 +32,7 @@
             justify-content: center;
             gap: 10px;
             height: 40px;
+            width: 100%;
             align-items: center;
         }
         @media (min-width: 600px) {
@@ -50,14 +63,14 @@
             font-size: 16px;
             border: 1px solid #ccc;
             border-radius: 4px;
-            background-color: #f5f5f5;;
+            background-color: #f5f5f5;
             color: black;
             cursor: pointer;
             transition: background-color 0.2s, transform 0.1s;
         }
 
         button:hover {
-            background-color: darkgrey;
+            background-color: #e0e0e0;
             transform: translateY(-1px);
         }
 
@@ -117,7 +130,6 @@
             display: none;
         }
 
-
         th.sortable {
             cursor: pointer;
             user-select: none;
@@ -157,25 +169,27 @@
             gap: 8px;
         }
 
-        .notification-dropdown {
-            position: relative;
-            display: inline-block;
-        }
-
         .notification-dropdown summary {
-            list-style: none;
-            cursor: pointer;
-            padding: 6px 12px;
+            display: block;         /* Use block to control the box model */
+            height: 35px;
+            line-height: 35px;      /* Centers text vertically */
+            padding: 0 10px;        /* Remove vertical padding */
+            margin: 0;              /* Reset any default margin */
+            box-sizing: border-box; /* Include padding in the height */
             background-color: #f0f0f0;
             border: 1px solid #ccc;
             border-radius: 4px;
             transition: background-color 0.2s;
+            cursor: pointer;
         }
 
         .notification-dropdown[open] summary {
             background-color: #e0e0e0;
         }
 
+        .notification-dropdown {
+            position: relative; /* Set container to relative positioning */
+        }
         .notification-dropdown .dropdown-content {
             position: absolute;
             top: 100%;
@@ -224,44 +238,42 @@
             justify-content: space-between;
         }
 
-        .modal {
-            display: none;               /* Hidden by default */
+        /* Modal for host details */
+        #hostDetailsModal, 
+        /* Modal for server info */
+        #serverInfoModal {
+            display: none;
             position: fixed;
             z-index: 1000;
             left: 0;
             top: 0;
-            width: 100%; 
+            width: 100%;
             height: 100%;
-            overflow: auto;              /* Enable scroll if needed */
-            background-color: rgba(0,0,0,0.5); /* Black background with opacity */
-            }
-
-            /* Modal Content/Box */
-            .modal-content {
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
             background-color: #fff;
-            margin: 10% auto;            /* 10% from the top and centered */
+            margin: 10% auto;
             padding: 20px;
             border-radius: 5px;
-            width: 80%;                  /* Could be more or less, depending on screen size */
+            width: 80%;
             max-width: 600px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-            }
-
-            /* The Close Button */
-            .close-button {
+            position: relative;
+        }
+        .close-button {
             color: #aaa;
             float: right;
             font-size: 28px;
             font-weight: bold;
             cursor: pointer;
-            }
-
-            .close-button:hover,
-            .close-button:focus {
+        }
+        .close-button:hover,
+        .close-button:focus {
             color: #000;
             text-decoration: none;
-            }
-
+        }
         .grey-button {
             border: 1px solid black;
             background-color: #f5f5f5;
@@ -272,9 +284,8 @@
             transition: background-color 0.2s;
         }
         .grey-button:hover {
-            background-color: darkgrey;
+            background-color: #e0e0e0;
         }
-
         button[onclick^="viewHostDetails"] {
             height: 25px;
             width: 25px;
@@ -284,16 +295,15 @@
             padding: 0 0px;
             text-align: left;
         }
-
         input[type="checkbox"] {
             width: 20px;
             height: 20px;
             cursor: pointer;
         }
-        
     </style>
 </head>
 <body>
+    <!-- Modal for host details (existing) -->
     <div id="hostDetailsModal" class="modal">
         <div class="modal-content">
             <span class="close-button" onclick="closeModal()">&times;</span>
@@ -303,17 +313,24 @@
             </div>
         </div>
     </div>
-    <h1>TeamPing</h1>
+    <!-- New modal for server info -->
+    <div id="serverInfoModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeServerInfoModal()">&times;</span>
+            <div id="serverInfoContent"></div>
+        </div>
+    </div>
+
+    
     <div class="controls">
         <div class="control-row combined">
+            <h1>TeamPing</h1>
             <input type="text" id="searchBox" placeholder="🔍 Filtrar" oninput="filterHosts(this.value)">
             <form id="addHostForm" onsubmit="addHost(event)">
                 <input type="text" id="newHostAddress" placeholder="Ingresar nombre o IP" required>
                 <button type="submit" class="grey-button">➕</button>
             </form>
         </div>
-        
-        
         <div class="control-row">
             <div class="action-buttons">
                 <button onclick="bulkAction('start')">▶️ Iniciar</button>
@@ -323,15 +340,15 @@
             <details class="notification-dropdown">
                 <summary>🔔 Notificaciones ▼</summary>
                 <div class="dropdown-content">
-                    <button onclick="bulkAction('notify_up')">Notificar cuando responde</button>
-                    <button onclick="bulkAction('notify_down')">Notificar cuando no responde</button>
+                    <button onclick="bulkAction('notify_up')">Cuando responde</button>
+                    <button onclick="bulkAction('notify_down')">Cuando no responde</button>
                     <button onclick="bulkAction('disable_notify')">Desactivar notificaciones</button>
                 </div>
             </details>
             <button id="silenceButton" onclick="toggleSilence()">🔇</button>
+            <button onclick="viewServerInfo()">ℹ️ Ver info del servidor</button>
         </div>
     </div>
-
 
     <table class="host-table">
         <thead>
@@ -343,13 +360,14 @@
                 <th class="sortable" data-sort-key="ping_success_rate">Porcentaje de respuestas</th>
                 <th class="sortable" data-sort-key="avg_latency">Latencia</th>
                 <th class="sortable" data-sort-key="notification_mode">Modo de notificación</th>
+                <th>Detalles</th>
             </tr>
         </thead>
         <tbody id="hosts"></tbody>
     </table>
 
     <div id="lastUpdated" style="text-align: center; margin-top: 10px; font-size: 14px; color: #666;">
-        Ultima actualización hace <span id="lastUpdatedTime">0</span> segundos
+        Última actualización hace <span id="lastUpdatedTime">0</span> segundos
     </div>
     <div id="statusBar"></div>
 
@@ -357,18 +375,17 @@
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
         const hostsDiv = document.getElementById('hosts');
         let hostsData = [];
-        const selectedHosts = new Set(); // Store selected rows
+        const selectedHosts = new Set();
         const statusBar = document.getElementById('statusBar');
 
         let isSilenced = false;
         let notificationHosts = [];
-
-        let audioContext = null;
-        let isAudioInitialized = false;
-
         let currentFilter = '';
         let currentSortColumn = null;
         let sortDirection = 'asc';
+
+        let audioContext = null;
+        let isAudioInitialized = false;
 
         function initAudio() {
             if (!isAudioInitialized) {
@@ -377,49 +394,38 @@
             }
         }
 
-
         function playBeep() {
             if (!audioContext || isSilenced) return;
-            
-            // Resume context if suspended
             if (audioContext.state === 'suspended') {
                 audioContext.resume();
             }
-
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
-            
             oscillator.connect(gainNode);
             gainNode.connect(audioContext.destination);
-            
             oscillator.type = 'sine';
             oscillator.frequency.setValueAtTime(1200, audioContext.currentTime);
             gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-            
             oscillator.start();
             oscillator.stop(audioContext.currentTime + 0.2);
         }
 
-        // Initialize audio on any user interaction
         document.addEventListener('click', initAudio);
         document.addEventListener('keypress', initAudio);
 
-        // Single beep interval
         setInterval(() => {
             if (notificationHosts.length > 0 && !isSilenced) {
                 playBeep();
             }
         }, 2000);
 
-
         function toggleSilence() {
             isSilenced = !isSilenced;
             const button = document.getElementById('silenceButton');
             button.innerHTML = isSilenced ? '🔊' : '🔇';
-            renderHosts(hostsData); // Re-render to update flashing
+            renderHosts(hostsData);
         }
 
-        // Update the table headers to make them sortable
         function renderHosts(hosts) {
             let filteredHosts = hosts.filter(host => {
                 const searchText = currentFilter;
@@ -431,29 +437,20 @@
                     formatNotificationMode(host.notification_mode).toLowerCase().includes(searchText)
                 );
             });
-
-            // Sort hosts
             if (currentSortColumn) {
                 filteredHosts.sort((a, b) => {
                     const valueA = getSortableValue(a, currentSortColumn);
                     const valueB = getSortableValue(b, currentSortColumn);
-                    
                     if (typeof valueA === 'string') {
-                        return sortDirection === 'asc' 
-                            ? valueA.localeCompare(valueB)
-                            : valueB.localeCompare(valueA);
+                        return sortDirection === 'asc' ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA);
                     }
                     return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
                 });
             }
             hostsDiv.innerHTML = "";
-
-            // Create a mapping of host IDs for quick lookup.
             filteredHosts.forEach(host => {
                 const row = document.createElement('tr');
                 row.setAttribute('data-id', host.id);
-
-                // Apply flashing classes if needed.
                 if (host.needs_notification) {
                     if (host.is_up) {
                         row.classList.add('flashing-up');
@@ -461,7 +458,6 @@
                         row.classList.add('flashing-down');
                     }
                 }
-
                 row.innerHTML = `
                     <td><input type="checkbox" class="select-host" data-id="${host.id}" ${selectedHosts.has(host.id) ? 'checked' : ''}></td>
                     <td>
@@ -474,19 +470,13 @@
                     <td>${formatNotificationMode(host.notification_mode)}</td>
                     <td><button onclick="viewHostDetails('${host.id}')">ℹ️</button></td>
                 `;
-
-                // Attach the checkbox event listener
                 const checkbox = row.querySelector('.select-host');
                 checkbox.addEventListener('change', event => {
                     const hostId = event.target.dataset.id;
                     event.target.checked ? selectedHosts.add(hostId) : selectedHosts.delete(hostId);
                 });
-
                 hostsDiv.appendChild(row);
             });
-
-
-            // Optionally, remove rows that are no longer in the hosts data.
             const hostIds = hosts.map(h => h.id);
             hostsDiv.querySelectorAll('tr[data-id]').forEach(row => {
                 if (!hostIds.includes(row.getAttribute('data-id'))) {
@@ -509,9 +499,8 @@
             try {
                 const response = await fetch(`/hosts/${hostId}`, { method: 'DELETE' });
                 if (response.ok) {
-                    // Optionally update the UI by removing the host from the DOM or refreshing the data
                     selectedHosts.delete(hostId);
-                    ws.send('refresh'); // Notify the WebSocket server to refresh
+                    ws.send('refresh');
                 } else {
                     throw new Error('Error al eliminar host');
                 }
@@ -529,7 +518,6 @@
                 setTimeout(hideStatusBar, 2000);
                 return;
             }
-
             let message;
             switch(action) {
                 case 'delete':
@@ -551,9 +539,7 @@
                     message = 'Desactivando notificaciones...';
                     break;
             }
-            
             showStatusBar(message);
-
             const promises = Array.from(selectedHosts).map(async hostId => {
                 if (action === 'delete') {
                     return deleteHost(hostId);
@@ -564,7 +550,6 @@
                     return updateNotificationMode(hostId, mode);
                 }
             });
-
             try {
                 await Promise.all(promises);
                 showStatusBar('Acción completada con éxito');
@@ -597,7 +582,6 @@
                 method: 'PUT',
             });
         }
-
 
         function viewHostDetails(hostId) {
             fetch(`/hosts/${hostId}/details`)
@@ -647,7 +631,7 @@
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: new URLSearchParams({ address })
                 });
-                document.getElementById('newHostAddress').value = ''; // Clear input
+                document.getElementById('newHostAddress').value = '';
                 if (!response.ok) throw new Error('Failed to add host');
             } catch (error) {
                 showStatusBar(`Error: ${error.message}`);
@@ -669,78 +653,142 @@
         }
 
         let lastUpdateTime = Date.now();
-
-    function updateLastUpdatedTime() {
-        const elapsedSeconds = Math.floor((Date.now() - lastUpdateTime) / 1000);
-        document.getElementById('lastUpdatedTime').textContent = elapsedSeconds;
-    }
-
-    setInterval(updateLastUpdatedTime, 1000);
-
-    ws.onmessage = (event) => {
-        try {
-            const hosts = JSON.parse(event.data);
-            hostsData = hosts;
-            notificationHosts = hosts.filter(h => h.needs_notification);
-            renderHosts(hosts);
-            lastUpdateTime = Date.now();
-        } catch (error) {
-            console.error('Error parsing WebSocket data:', error);
+        function updateLastUpdatedTime() {
+            const elapsedSeconds = Math.floor((Date.now() - lastUpdateTime) / 1000);
+            document.getElementById('lastUpdatedTime').textContent = elapsedSeconds;
         }
-    };
+        setInterval(updateLastUpdatedTime, 1000);
 
-    document.querySelectorAll('th.sortable').forEach(header => {
-        header.dataset.originalText = header.textContent;
-        header.addEventListener('click', () => handleSort(header.dataset.sortKey));
-    });
-
-    function filterHosts(query) {
-        currentFilter = query.toLowerCase();
-        renderHosts(hostsData);
-    }
-
-    function handleSort(sortKey) {
-        if (currentSortColumn === sortKey) {
-            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            currentSortColumn = sortKey;
-            sortDirection = 'asc';
-        }
-        updateSortIndicators();
-        renderHosts(hostsData);
-    }
-
-    function updateSortIndicators() {
-        document.querySelectorAll('th.sortable').forEach(header => {
-            const originalText = header.dataset.originalText;
-            if (header.dataset.sortKey === currentSortColumn) {
-                header.innerHTML = `${originalText} <span class="sort-indicator">${sortDirection === 'asc' ? '↑' : '↓'}</span>`;
-            } else {
-                header.textContent = originalText;
+        ws.onmessage = (event) => {
+            try {
+                const hosts = JSON.parse(event.data);
+                hostsData = hosts;
+                notificationHosts = hosts.filter(h => h.needs_notification);
+                renderHosts(hosts);
+                lastUpdateTime = Date.now();
+            } catch (error) {
+                console.error('Error parsing WebSocket data:', error);
             }
+        };
+
+        document.querySelectorAll('th.sortable').forEach(header => {
+            header.dataset.originalText = header.textContent;
+            header.addEventListener('click', () => handleSort(header.dataset.sortKey));
         });
-    }
 
-    function getSortableValue(host, sortKey) {
-        switch(sortKey) {
-            case 'status':
-                if (!host.is_monitoring) return 0;
-                return host.is_up ? 2 : 1;
-            case 'address':
-                return host.address.toLowerCase();
-            case 'dns_info':
-                return (host.dns_info || '').toLowerCase();
-            case 'ping_success_rate':
-                return host.ping_success_rate || 0;
-            case 'avg_latency':
-                return host.avg_latency ?? Infinity;
-            case 'notification_mode':
-                return formatNotificationMode(host.notification_mode).toLowerCase();
-            default:
-                return '';
+        function filterHosts(query) {
+            currentFilter = query.toLowerCase();
+            renderHosts(hostsData);
         }
-    }
 
+        function handleSort(sortKey) {
+            if (currentSortColumn === sortKey) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortColumn = sortKey;
+                sortDirection = 'asc';
+            }
+            updateSortIndicators();
+            renderHosts(hostsData);
+        }
+
+        function updateSortIndicators() {
+            document.querySelectorAll('th.sortable').forEach(header => {
+                const originalText = header.dataset.originalText;
+                if (header.dataset.sortKey === currentSortColumn) {
+                    header.innerHTML = `${originalText} <span class="sort-indicator">${sortDirection === 'asc' ? '↑' : '↓'}</span>`;
+                } else {
+                    header.textContent = originalText;
+                }
+            });
+        }
+
+        function getSortableValue(host, sortKey) {
+            switch(sortKey) {
+                case 'status':
+                    if (!host.is_monitoring) return 0;
+                    return host.is_up ? 2 : 1;
+                case 'address':
+                    return host.address.toLowerCase();
+                case 'dns_info':
+                    return (host.dns_info || '').toLowerCase();
+                case 'ping_success_rate':
+                    return host.ping_success_rate || 0;
+                case 'avg_latency':
+                    return host.avg_latency ?? Infinity;
+                case 'notification_mode':
+                    return formatNotificationMode(host.notification_mode).toLowerCase();
+                default:
+                    return '';
+            }
+        }
+
+        // ---------------------------
+        // Functions for Server Info Modal
+        // ---------------------------
+        async function viewServerInfo() {
+            try {
+                const response = await fetch('/server-info');
+                if (!response.ok) throw new Error('Error fetching server info');
+                const info = await response.json();
+                let html = "<h2>Información del Servidor</h2>";
+                html += `<p><strong>Usuario:</strong> ${info.user}</p>`;
+                html += `<p><strong>Ejecuta como administrador:</strong> ${info.is_admin ? 'Sí' : 'No'}</p>`;
+                html += `<h3>Red</h3>`;
+                html += `<p><strong>Hostname:</strong> ${info.network.hostname}</p>`;
+                html += `<p><strong>IPs:</strong> ${info.network.ip_addresses.join(', ')}</p>`;
+                html += `<p><strong>Puerto:</strong> ${info.network.port || 'N/A'}</p>`;
+                html += `<h3>CPU</h3>`;
+                html += `<p><strong>Uso de CPU:</strong> ${info.cpu.cpu_percent}%</p>`;
+                if (info.cpu.load_average) {
+                    html += `<p><strong>Promedio de carga:</strong> ${info.cpu.load_average.join(', ')}</p>`;
+                }
+                html += `<h3>Tiempo de Actividad</h3>`;
+                html += `<p><strong>Sistema:</strong> ${formatSeconds(info.uptime.system_uptime_seconds)}</p>`;
+                html += `<p><strong>Proceso:</strong> ${formatSeconds(info.uptime.process_uptime_seconds)}</p>`;
+                html += `<h3>Memoria</h3>`;
+                html += `<p><strong>Total:</strong> ${formatBytes(info.memory.virtual_memory.total)}</p>`;
+                html += `<p><strong>Usada:</strong> ${formatBytes(info.memory.virtual_memory.used)}</p>`;
+                html += `<p><strong>Porcentaje:</strong> ${info.memory.virtual_memory.percent}%</p>`;
+                html += `<h3>Disco</h3>`;
+                html += `<p><strong>Total:</strong> ${formatBytes(info.disk.usage.total)}</p>`;
+                html += `<p><strong>Usado:</strong> ${formatBytes(info.disk.usage.used)}</p>`;
+                html += `<p><strong>Libre:</strong> ${formatBytes(info.disk.usage.free)}</p>`;
+                html += `<p><strong>Porcentaje usado:</strong> ${info.disk.usage.percent}%</p>`;
+                html += `<h3>Plataforma</h3>`;
+                html += `<p><strong>Sistema:</strong> ${info.platform.system}</p>`;
+                html += `<p><strong>Release:</strong> ${info.platform.release}</p>`;
+                html += `<p><strong>Versión:</strong> ${info.platform.version}</p>`;
+                html += `<p><strong>Arquitectura:</strong> ${info.platform.machine}</p>`;
+                html += `<p><strong>Procesador:</strong> ${info.platform.processor}</p>`;
+                document.getElementById('serverInfoContent').innerHTML = html;
+                document.getElementById('serverInfoModal').style.display = 'block';
+            } catch (error) {
+                alert("Error fetching server info: " + error.message);
+            }
+        }
+
+        function closeServerInfoModal() {
+            document.getElementById('serverInfoModal').style.display = 'none';
+        }
+
+        function formatSeconds(seconds) {
+            const d = Math.floor(seconds / 86400);
+            seconds %= 86400;
+            const h = Math.floor(seconds / 3600);
+            seconds %= 3600;
+            const m = Math.floor(seconds / 60);
+            seconds = Math.floor(seconds % 60);
+            return `${d}d ${h}h ${m}m ${seconds}s`;
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
     </script>
-    </body>
+</body>
 </html>

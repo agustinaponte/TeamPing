@@ -11,6 +11,10 @@ import aiodns
 import fastapi
 import uvicorn
 import os
+import socket
+import platform
+import psutil
+import getpass
 
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +37,96 @@ logging.basicConfig(
 )
 sys.stdout.reconfigure(encoding="utf-8")
 logger = logging.getLogger(__name__)
+
+
+def get_current_user():
+    try:
+        return getpass.getuser()
+    except Exception:
+        return "unknown"
+
+def is_admin():
+    try:
+        if os.name == 'nt':  # Windows
+            import ctypes
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        else:  # Unix/Linux
+            return os.geteuid() == 0
+    except Exception:
+        return False
+
+def get_network_info():
+    hostname = socket.gethostname()
+    ip_addresses = []
+    try:
+        # Se obtienen todas las direcciones IP de las interfaces del sistema
+        for interface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family == socket.AF_INET:
+                    ip_addresses.append(addr.address)
+    except Exception:
+        pass
+    port = os.getenv("FLET_SERVER_PORT") or os.getenv("PORT") or None
+    return {
+        "hostname": hostname,
+        "ip_addresses": ip_addresses,
+        "port": port,
+    }
+
+def get_cpu_info():
+    cpu_percent = psutil.cpu_percent(interval=1)
+    load_avg = None
+    if hasattr(os, "getloadavg"):
+        load_avg = os.getloadavg()  # Devuelve una tupla: (1 min, 5 min, 15 min)
+    return {
+        "cpu_percent": cpu_percent,
+        "load_average": load_avg,
+    }
+
+def get_uptime_info():
+    boot_time = psutil.boot_time()
+    system_uptime = time.time() - boot_time
+    process = psutil.Process(os.getpid())
+    process_uptime = time.time() - process.create_time()
+    return {
+        "system_uptime_seconds": system_uptime,
+        "process_uptime_seconds": process_uptime,
+    }
+
+def get_memory_info():
+    virtual_mem = psutil.virtual_memory()
+    process = psutil.Process(os.getpid())
+    process_mem = process.memory_info()
+    return {
+        "virtual_memory": {
+            "total": virtual_mem.total,
+            "available": virtual_mem.available,
+            "used": virtual_mem.used,
+            "percent": virtual_mem.percent,
+        },
+        "process_memory": {
+            "rss": process_mem.rss,  # Resident Set Size
+            "vms": process_mem.vms,  # Virtual Memory Size
+        },
+    }
+
+def get_disk_info():
+    disk_usage = psutil.disk_usage("/")  # Asumiendo la partición raíz
+    disk_io = psutil.disk_io_counters()
+    return {
+        "usage": {
+            "total": disk_usage.total,
+            "used": disk_usage.used,
+            "free": disk_usage.free,
+            "percent": disk_usage.percent,
+        },
+        "io": {
+            "read_bytes": disk_io.read_bytes,
+            "write_bytes": disk_io.write_bytes,
+            "read_count": disk_io.read_count,
+            "write_count": disk_io.write_count,
+        },
+    }
 
 def get_resource_path(relative_path):
     """Get the absolute path to a resource, works for dev and PyInstaller"""
@@ -464,6 +558,26 @@ def get_host_logs(host_id: str):
         },
         "response_log": host.response_log,
     }
+
+@app.get("/server-info")
+async def server_info():
+    info = {
+        "user": get_current_user(),
+        "is_admin": is_admin(),
+        "network": get_network_info(),
+        "cpu": get_cpu_info(),
+        "uptime": get_uptime_info(),
+        "memory": get_memory_info(),
+        "disk": get_disk_info(),
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "version": platform.version(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+        }
+    }
+    return info
 
 async def main():
     logger.debug("Initializing monitoring system")
