@@ -85,6 +85,7 @@ class HostMonitor:
         self.load_hosts(hosts_file)
         self.websocket_clients = set()
         self.executor = ThreadPoolExecutor(max_workers=100)
+        self.shutdown_event = None
 
     async def _calculate_host_data(self):
         """Calculate fresh host data without caching"""
@@ -125,18 +126,64 @@ class HostMonitor:
         host_data = await self._calculate_host_data()
         await self._send_updates_to_clients(host_data)
 
-    async def monitor_hosts(self, shutdown_event: asyncio.Event):
-        """Start individual monitoring loops for each host"""
-        tasks = []
-        for host in self.hosts.values():
-            if host.is_monitoring:
-                task = asyncio.create_task(self.host_monitoring_loop(host, shutdown_event))
-                tasks.append(task)
-        await shutdown_event.wait()
-        # Cleanup tasks on shutdown
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+    async def _send_updates_to_clients(self, host_data):
+        """Send updates to all connected websocket clients"""
+        for websocket in self.websocket_clients.copy():
+            try:
+                await websocket.send_json(host_data)
+            except Exception as e:
+                logger.error(f"Failed to send data to websocket: {e}")
+                self.websocket_clients.remove(websocket)
+
+    async def ping_host(self, host):
+        """Ping host with detailed debug logging (KEEP THIS VERSION)"""
+        logger.info(f"Pinging {host.address}")
+        try:
+            loop = asyncio.get_event_loop()
+            logger.debug(f"Sending ICMP request to {host.address}")
+            
+            response = await loop.run_in_executor(
+                None, 
+                lambda: ping(host.address, count=1, timeout=2)
+            )
+            
+            success = response.success()
+            latency = response.rtt_avg_ms if success else None
+            logger.debug(f"Received response from {host.address}: success={success}, latency={latency}ms")
+                    
+            # Update status
+            previous_status = host.is_up
+            host.is_up = success
+            host.last_checked = datetime.now()
+            
+            # Only notify if status changed
+            if previous_status != host.is_up:
+                host.last_status_change = datetime.now()
+                await self.notify_clients()
+
+            # Update histories
+            host.ping_history.append(1 if success else 0)
+            host.latency_history.append(latency)
+            host.response_log.append({
+                "timestamp": host.last_checked.isoformat(),
+                "success": success,
+                "latency": latency
+            })
+            host.maintain_history_size()
+
+        except Exception as e:
+            logger.error(f"Failed to ping {host.address}: {e}")
+            if host.is_up:  # Only notify if status changes
+                await self.notify_clients()
+            host.is_up = False
+            host.ping_history.append(0)
+            host.latency_history.append(None)
+            host.response_log.append({
+                "timestamp": datetime.now().isoformat(),
+                "success": False,
+                "error": str(e)
+            })
+            host.maintain_history_size()
 
     async def notify_loop(self, shutdown_event: asyncio.Event):
         while not shutdown_event.is_set():
@@ -232,49 +279,19 @@ class HostMonitor:
             for host in self.hosts.values():
                 writer.writerow([host.address])
 
-    async def ping_host(self, host):
-        logger.info(f"Pinging {host.address}")
-        try:
-            loop = asyncio.get_event_loop()
-            # Run the blocking ping call in a thread pool
-            response = await loop.run_in_executor(
-                None,  # Use the default executor
-                lambda: ping(host.address, count=1, timeout=2)
-            )
-            success = response.success()
-            latency = response.rtt_avg_ms if success else None
-            
-            # Update host status
-            host.is_up = success
-            host.last_checked = datetime.now()
-            
-            # Append to histories
-            host.ping_history.append(1 if success else 0)
-            host.latency_history.append(latency)
-            host.response_log.append({
-                "timestamp": host.last_checked.isoformat(),
-                "success": success,
-                "latency": latency
-            })
-            
-            # Maintain history size
-            host.maintain_history_size()
-            
-            logger.debug(f"Ping results for {host.address}: Success={success}, Latency={latency}ms")
-            
-        except Exception as e:
-            logger.error(f"Failed to ping {host.address}: {e}")
-            host.is_up = False
-            host.ping_history.append(0)
-            host.latency_history.append(None)
-            host.response_log.append({
-                "timestamp": datetime.now().isoformat(),
-                "success": False,
-                "error": str(e)
-            })
-            host.maintain_history_size()
-
-
+    
+    async def monitor_hosts(self, shutdown_event: asyncio.Event):
+        """Start individual monitoring loops for each host"""
+        tasks = []
+        for host in self.hosts.values():
+            if host.is_monitoring:
+                task = asyncio.create_task(self.host_monitoring_loop(host, shutdown_event))
+                tasks.append(task)
+        await shutdown_event.wait()
+        # Cleanup tasks on shutdown
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
     
     async def host_monitoring_loop(self, host, shutdown_event):
         """Monitoring loop with start/stop logging"""
