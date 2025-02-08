@@ -82,10 +82,31 @@ class Host(BaseModel):
 class HostMonitor:
     def __init__(self, hosts_file='hosts.csv'):
         self.hosts = {}
+        self.monitor_tasks = {}
         self.load_hosts(hosts_file)
         self.websocket_clients = set()
         self.executor = ThreadPoolExecutor(max_workers=100)
         self.shutdown_event = None
+
+    async def start_monitoring(self, host, shutdown_event):
+        """Start monitoring a host and store the task"""
+        if host.id in self.monitor_tasks:
+            return  # Already monitoring
+        task = asyncio.create_task(self.host_monitoring_loop(host, shutdown_event))
+        self.monitor_tasks[host.id] = task
+        # Add callback to remove task from tracking when done
+        task.add_done_callback(lambda _: self.monitor_tasks.pop(host.id, None))
+
+    async def stop_monitoring(self, host_id):
+        """Stop monitoring a host by cancelling its task"""
+        task = self.monitor_tasks.get(host_id)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            self.monitor_tasks.pop(host_id, None)
 
     async def _calculate_host_data(self):
         """Calculate fresh host data without caching"""
@@ -279,19 +300,18 @@ class HostMonitor:
             for host in self.hosts.values():
                 writer.writerow([host.address])
 
-    
     async def monitor_hosts(self, shutdown_event: asyncio.Event):
-        """Start individual monitoring loops for each host"""
-        tasks = []
+        """Start monitoring for all hosts"""
         for host in self.hosts.values():
             if host.is_monitoring:
-                task = asyncio.create_task(self.host_monitoring_loop(host, shutdown_event))
-                tasks.append(task)
+                await self.start_monitoring(host, shutdown_event)
         await shutdown_event.wait()
-        # Cleanup tasks on shutdown
+        # Cancel all tasks on shutdown
+        tasks = list(self.monitor_tasks.values())
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        self.monitor_tasks.clear()
     
     async def host_monitoring_loop(self, host, shutdown_event):
         """Monitoring loop with start/stop logging"""
@@ -344,9 +364,7 @@ async def add_host(address: str = fastapi.Form(...)):
         host_monitor.save_hosts()
         # Immediately start monitoring if applicable
         if new_host.is_monitoring:
-            new_host.monitor_task = asyncio.create_task(
-                host_monitor.host_monitoring_loop(new_host, host_monitor.shutdown_event)
-            )
+            await host_monitor.start_monitoring(new_host, host_monitor.shutdown_event)
         await host_monitor.notify_clients()
         return new_host
     return None
@@ -371,11 +389,11 @@ def get_hosts():
         host_data.append(data)
     return host_data
 
-
-
 @app.delete("/hosts/{host_id}")
 async def remove_host(host_id: str):
     if host_id in host_monitor.hosts:
+        # Stop monitoring before deletion
+        await host_monitor.stop_monitoring(host_id)
         del host_monitor.hosts[host_id]
         host_monitor.save_hosts()
         await host_monitor.notify_clients()
@@ -384,12 +402,20 @@ async def remove_host(host_id: str):
 
 @app.put("/hosts/{host_id}/toggle-monitoring")
 async def toggle_host_monitoring(host_id: str):
-    if host_id in host_monitor.hosts:
-        host = host_monitor.hosts[host_id]
-        host.is_monitoring = not host.is_monitoring
-        await host_monitor.notify_clients()
-        return host
-    return None
+    host = host_monitor.hosts.get(host_id)
+    if not host:
+        return None
+    
+    new_state = not host.is_monitoring
+    host.is_monitoring = new_state
+    
+    if new_state:
+        await host_monitor.start_monitoring(host, host_monitor.shutdown_event)
+    else:
+        await host_monitor.stop_monitoring(host_id)
+    
+    await host_monitor.notify_clients()
+    return host
 
 @app.put("/hosts/{host_id}/notification-mode")
 async def set_notification_mode(host_id: str, mode: str = fastapi.Query(...)):
