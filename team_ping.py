@@ -356,18 +356,22 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @app.post("/hosts")
-async def add_host(address: str = fastapi.Form(...)):
-    host_id = address.replace('.', '_')
-    if host_id not in host_monitor.hosts:
-        new_host = Host(id=host_id, address=address, is_monitoring=True)
-        host_monitor.hosts[host_id] = new_host
-        host_monitor.save_hosts()
-        # Immediately start monitoring if applicable
-        if new_host.is_monitoring:
-            await host_monitor.start_monitoring(new_host, host_monitor.shutdown_event)
-        await host_monitor.notify_clients()
-        return new_host
-    return None
+async def add_hosts(address: str = fastapi.Form(...)):
+    # Separa las direcciones basándose en espacios
+    addresses = address.split()
+    new_hosts = []
+
+    for addr in addresses:
+        host_id = addr.replace('.', '_')
+        if host_id not in host_monitor.hosts:
+            new_host = Host(id=host_id, address=addr, is_monitoring=True)
+            host_monitor.hosts[host_id] = new_host
+            host_monitor.save_hosts()
+            if new_host.is_monitoring:
+                await host_monitor.start_monitoring(new_host, host_monitor.shutdown_event)
+            new_hosts.append(new_host)
+    await host_monitor.notify_clients()
+    return new_hosts
 
 @app.get("/hosts")
 def get_hosts():
