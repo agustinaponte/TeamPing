@@ -219,6 +219,24 @@ class HostMonitor:
                 elif host.notification_mode == 'notify_down' and not host.is_up:
                     needs_notification = True
 
+            last_entries = host.response_log[-10:]  # Get last 10 entries
+            last_responses = []
+            for entry in reversed(last_entries):
+                # Extract timestamp and success
+                timestamp_str = entry.get('timestamp')
+                success = entry.get('success', False)
+                unix_time = None
+                if timestamp_str:
+                    try:
+                        dt = datetime.fromisoformat(timestamp_str)
+                        unix_time = int(dt.timestamp())
+                    except ValueError:
+                        pass  # Keep unix_time as None if parsing fails
+                last_responses.append({
+                    'success': success,
+                    'timestamp': unix_time
+                })
+
             data = {
                 'id': host.id,
                 'address': host.address,
@@ -230,6 +248,7 @@ class HostMonitor:
                 'last_checked': host.last_checked.isoformat() if host.last_checked else None,
                 'notification_mode': host.notification_mode,
                 'needs_notification': needs_notification,
+                'last_responses': last_responses
             }
             host_data.append(data)
         return host_data
@@ -474,6 +493,14 @@ def get_hosts():
         valid_latencies = [lat for lat in host.latency_history if lat is not None]
         ping_history = host.ping_history
 
+        last_responses = []
+        for i in range(max(0, len(ping_history) - 10), len(ping_history)):
+            response = {
+                'success': ping_history[i],
+                'latency': host.latency_history[i] if i < len(host.latency_history) else None
+            }
+            last_responses.append(response)
+
         data = {
             'id': host.id,
             'address': host.address,
@@ -482,7 +509,8 @@ def get_hosts():
             'is_monitoring': host.is_monitoring,
             'ping_success_rate': (sum(ping_history) / len(ping_history) * 100) if ping_history else 0,
             'avg_latency': sum(valid_latencies) / len(valid_latencies) if valid_latencies else None,
-            'last_checked': host.last_checked.isoformat() if host.last_checked else None
+            'last_checked': host.last_checked.isoformat() if host.last_checked else None,
+            'last_responses': last_responses
         }
         host_data.append(data)
     return host_data

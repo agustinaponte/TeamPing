@@ -98,7 +98,7 @@
         }
         th, td {
             border: 1px solid #ddd;
-            padding: 10px;
+            padding: 2px;
             text-align: left;
         }
         th {
@@ -108,14 +108,29 @@
             z-index: 1;
         }
         .status-circle {
+            display: block;
             width: 15px;
             height: 15px;
             border-radius: 50%;
             display: inline-block;
-            margin-right: 10px;
+            border-color: #000;
+            border-width: 1px;
+            border-style: solid;
+            margin: 0;
         }
-        .status-up { background-color: green; }
-        .status-down { background-color: red; }
+        .host-table td:nth-child(2) {
+            text-align: center;
+            vertical-align: middle;
+        }
+        .host-table th:nth-child(2) {
+            padding: 2px 4px;  /* Minimal vertical padding, no horizontal padding */
+            width: 1%;       /* Let content determine width */
+            white-space: nowrap;
+            text-align: left;
+        }
+
+        .status-up { background-color: rgb(53, 251, 53); }
+        .status-down { background-color: rgba(255, 0, 0, 0.519); }
         .status-paused { background-color: gray; }
         #statusBar {
             position: fixed;
@@ -170,12 +185,12 @@
         }
 
         .notification-dropdown summary {
-            display: block;         /* Use block to control the box model */
+            display: block;
             height: 35px;
-            line-height: 35px;      /* Centers text vertically */
-            padding: 0 10px;        /* Remove vertical padding */
-            margin: 0;              /* Reset any default margin */
-            box-sizing: border-box; /* Include padding in the height */
+            line-height: 35px;
+            padding: 0 10px;
+            margin: 0;
+            box-sizing: border-box;
             background-color: #f0f0f0;
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -188,7 +203,7 @@
         }
 
         .notification-dropdown {
-            position: relative; /* Set container to relative positioning */
+            position: relative;
         }
         .notification-dropdown .dropdown-content {
             position: absolute;
@@ -300,6 +315,55 @@
             height: 20px;
             cursor: pointer;
         }
+        .ping-results {
+            display: flex;
+            gap: 2px;
+            align-items: center;
+            height: 100%;
+        }
+
+        .ping-bar {
+            position: relative;
+            width: 10px;
+            height: 20px;
+            border-radius: 1px;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+
+        .ping-success {
+            background-color: #4CAF50;  /* Green */
+        }
+
+        .ping-failure {
+            background-color: #ca372c;  /* Red */
+        }
+
+        .ping-no-data {
+            background-color: #cccccc;  /* Gray for no data */
+        }
+
+        .ping-results-cell {
+            padding: 2px 2px !important;
+            min-width: 80px;
+        }
+        .ping-failure::after {
+            content: "✕";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgb(0, 0, 0);
+            font-size: 10px;
+            font-weight: bold;
+            text-shadow: 0 0 2px rgba(0,0,0,0.5);
+            }
+
+        /* Update existing td style */
+        .host-table td {
+            height: 20px;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
@@ -357,9 +421,10 @@
                 <th class="sortable" data-sort-key="status">Estado</th>
                 <th class="sortable" data-sort-key="address">Host</th>
                 <th class="sortable" data-sort-key="dns_info">Info DNS</th>
-                <th class="sortable" data-sort-key="ping_success_rate">Porcentaje de respuestas</th>
+                <th class="sortable" data-sort-key="ping_success_rate">Últimos 100</th>
+                <th>Últimos 10</th>
                 <th class="sortable" data-sort-key="avg_latency">Latencia</th>
-                <th class="sortable" data-sort-key="notification_mode">Modo de notificación</th>
+                <th class="sortable" data-sort-key="notification_mode">Notificación</th>
                 <th>Detalles</th>
             </tr>
         </thead>
@@ -422,7 +487,7 @@
         function toggleSilence() {
             isSilenced = !isSilenced;
             const button = document.getElementById('silenceButton');
-            button.innerHTML = isSilenced ? '🔊' : '🔇';
+            button.innerHTML = isSilenced ? '🔇' : '🔊';
             renderHosts(hostsData);
         }
 
@@ -450,6 +515,16 @@
             hostsDiv.innerHTML = "";
             filteredHosts.forEach(host => {
                 const row = document.createElement('tr');
+                const pingResults = host.last_responses || [];
+                const pingBarsHtml = `
+                    <div class="ping-results">
+                        ${(host.last_responses || Array(10).fill(null)).map(log => 
+                            `<div class="ping-bar ${
+                                log ? (log.success ? 'ping-success' : 'ping-failure') : 'ping-no-data'
+                            }"></div>`
+                        ).slice(0, 10).join('')}
+                    </div>
+                `;
                 row.setAttribute('data-id', host.id);
                 if (host.needs_notification) {
                     if (host.is_up) {
@@ -466,6 +541,7 @@
                     <td>${host.address}</td>
                     <td>${host.dns_info || "N/A"}</td>
                     <td>${host.ping_success_rate?.toFixed(0) ?? 0}%</td>
+                    <td class="ping-results-cell">${pingBarsHtml}</td>
                     <td>${host.avg_latency ? host.avg_latency.toFixed(2) + 'ms' : 'N/A'}</td>
                     <td>${formatNotificationMode(host.notification_mode)}</td>
                     <td><button onclick="viewHostDetails('${host.id}')">ℹ️</button></td>
@@ -495,11 +571,12 @@
         }
 
         async function deleteHost(hostId) {
-            showStatusBar('Eliminando host...');
             try {
                 const response = await fetch(`/hosts/${hostId}`, { method: 'DELETE' });
                 if (response.ok) {
+                    hostsData = hostsData.filter(h => h.id !== hostId);
                     selectedHosts.delete(hostId);
+                    renderHosts(hostsData);
                     ws.send('refresh');
                 } else {
                     throw new Error('Error al eliminar host');
@@ -518,6 +595,7 @@
                 setTimeout(hideStatusBar, 2000);
                 return;
             }
+
             let message;
             switch(action) {
                 case 'delete':
@@ -539,19 +617,32 @@
                     message = 'Desactivando notificaciones...';
                     break;
             }
+            
             showStatusBar(message);
-            const promises = Array.from(selectedHosts).map(async hostId => {
-                if (action === 'delete') {
-                    return deleteHost(hostId);
-                } else if (action === 'start' || action === 'stop') {
-                    return toggleMonitoring(hostId, action === 'start');
-                } else if (['notify_up', 'notify_down', 'disable_notify'].includes(action)) {
-                    const mode = action === 'disable_notify' ? 'disabled' : action;
-                    return updateNotificationMode(hostId, mode);
-                }
-            });
+            
             try {
+                const hostIds = Array.from(selectedHosts);
+                const promises = hostIds.map(hostId => {
+                    if (action === 'delete') {
+                        return deleteHost(hostId);
+                    } else if (action === 'start' || action === 'stop') {
+                        return toggleMonitoring(hostId, action === 'start');
+                    } else if (['notify_up', 'notify_down', 'disable_notify'].includes(action)) {
+                        const mode = action === 'disable_notify' ? 'disabled' : action;
+                        return updateNotificationMode(hostId, mode);
+                    }
+                });
+
                 await Promise.all(promises);
+                
+                // Additional cleanup specifically for delete action
+                if (action === 'delete') {
+                    // Remove deleted hosts from local data
+                    hostsData = hostsData.filter(h => !selectedHosts.has(h.id));
+                    selectedHosts.clear();
+                    renderHosts(hostsData);
+                }
+
                 showStatusBar('Acción completada con éxito');
             } catch (error) {
                 showStatusBar('Error: ' + error.message);
@@ -659,12 +750,39 @@
         }
         setInterval(updateLastUpdatedTime, 1000);
 
+        // Update the WebSocket handler:
         ws.onmessage = (event) => {
             try {
-                const hosts = JSON.parse(event.data);
-                hostsData = hosts;
-                notificationHosts = hosts.filter(h => h.needs_notification);
-                renderHosts(hosts);
+                const incomingHosts = JSON.parse(event.data);
+                const incomingHostsMap = new Map(incomingHosts.map(h => [h.id, h]));
+                
+                hostsData = hostsData.map(existingHost => {
+                    const incomingHost = incomingHostsMap.get(existingHost.id);
+                    if (incomingHost) {
+                        return {
+                            last_responses: Array(10).fill(null), // Initialize empty
+                            ...existingHost,
+                            ...incomingHost,
+                            last_responses: incomingHost.last_responses !== undefined 
+                                ? incomingHost.last_responses
+                                : existingHost.last_responses
+                        };
+                    }
+                    return existingHost;
+                });
+
+                // Handle new hosts with proper initialization
+                incomingHosts.forEach(incomingHost => {
+                    if (!hostsData.some(h => h.id === incomingHost.id)) {
+                        hostsData.push({
+                            last_responses: Array(10).fill(null),
+                            ...incomingHost
+                        });
+                    }
+                });
+
+                notificationHosts = hostsData.filter(h => h.needs_notification);
+                renderHosts(hostsData);
                 lastUpdateTime = Date.now();
             } catch (error) {
                 console.error('Error parsing WebSocket data:', error);
