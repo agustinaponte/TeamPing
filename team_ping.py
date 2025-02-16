@@ -182,13 +182,14 @@ class HostMonitor:
         self.executor = ThreadPoolExecutor(max_workers=100)
         self.shutdown_event = None
 
-    async def start_monitoring(self, host, shutdown_event):
-        """Start monitoring a host and store the task"""
+    async def start_monitoring(self, host, shutdown_event, initial_delay=0):
+        """Start monitoring with configurable initial delay"""
         if host.id in self.monitor_tasks:
-            return  # Already monitoring
+            return
+        
+        await asyncio.sleep(initial_delay)
         task = asyncio.create_task(self.host_monitoring_loop(host, shutdown_event))
         self.monitor_tasks[host.id] = task
-        # Add callback to remove task from tracking when done
         task.add_done_callback(lambda _: self.monitor_tasks.pop(host.id, None))
 
     async def stop_monitoring(self, host_id):
@@ -363,7 +364,7 @@ class HostMonitor:
             done_tasks = {task for task in dns_tasks if task.done()}
             dns_tasks.difference_update(done_tasks)
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(120)
 
         # Cancel remaining tasks on shutdown
         for task in dns_tasks:
@@ -470,19 +471,35 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.post("/hosts")
 async def add_hosts(address: str = fastapi.Form(...)):
-    # Separa las direcciones basándose en espacios
     addresses = address.split()
     new_hosts = []
-
-    for addr in addresses:
+    batch_size = len(addresses)
+    spread_window = 2.0  # Configured 2-second window
+    
+    for idx, addr in enumerate(addresses):
         host_id = addr.replace('.', '_')
-        if host_id not in host_monitor.hosts:
-            new_host = Host(id=host_id, address=addr, is_monitoring=True)
-            host_monitor.hosts[host_id] = new_host
-            host_monitor.save_hosts()
-            if new_host.is_monitoring:
-                await host_monitor.start_monitoring(new_host, host_monitor.shutdown_event)
-            new_hosts.append(new_host)
+        if host_id in host_monitor.hosts:
+            continue
+            
+        new_host = Host(id=host_id, address=addr, is_monitoring=True)
+        host_monitor.hosts[host_id] = new_host
+        new_hosts.append(new_host)
+        
+        # Calculate staggered delay
+        if batch_size > 5:
+            # Evenly spread across window for large batches
+            delay = (spread_window / max(1, batch_size - 1)) * idx
+        else:
+            # Random stagger for small batches
+            delay = random.uniform(0, spread_window)
+        
+        await host_monitor.start_monitoring(
+            new_host, 
+            host_monitor.shutdown_event,
+            initial_delay=delay
+        )
+    
+    host_monitor.save_hosts()
     await host_monitor.notify_clients()
     return new_hosts
 

@@ -452,6 +452,19 @@
         let audioContext = null;
         let isAudioInitialized = false;
 
+        let renderScheduled = false;
+
+        function scheduleRender() {
+        if (!renderScheduled) {
+            renderScheduled = true;
+            setTimeout(() => {
+            renderHosts(hostsData);
+            renderScheduled = false;
+            }, 100);
+        }
+        }
+
+
         function initAudio() {
             if (!isAudioInitialized) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -492,74 +505,95 @@
         }
 
         function renderHosts(hosts) {
+            // Filter hosts based on the current search text.
             let filteredHosts = hosts.filter(host => {
                 const searchText = currentFilter;
                 return (
-                    host.address.toLowerCase().includes(searchText) ||
-                    (host.dns_info || '').toLowerCase().includes(searchText) ||
-                    (host.ping_success_rate?.toString() || '').includes(searchText) ||
-                    (host.avg_latency?.toString() || '').includes(searchText) ||
-                    formatNotificationMode(host.notification_mode).toLowerCase().includes(searchText)
+                host.address.toLowerCase().includes(searchText) ||
+                (host.dns_info || '').toLowerCase().includes(searchText) ||
+                (host.ping_success_rate?.toString() || '').includes(searchText) ||
+                (host.avg_latency?.toString() || '').includes(searchText) ||
+                formatNotificationMode(host.notification_mode).toLowerCase().includes(searchText)
                 );
             });
+
+            // Sort if a sort column is specified.
             if (currentSortColumn) {
                 filteredHosts.sort((a, b) => {
-                    const valueA = getSortableValue(a, currentSortColumn);
-                    const valueB = getSortableValue(b, currentSortColumn);
-                    if (typeof valueA === 'string') {
-                        return sortDirection === 'asc' ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA);
-                    }
-                    return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+                const valueA = getSortableValue(a, currentSortColumn);
+                const valueB = getSortableValue(b, currentSortColumn);
+                if (typeof valueA === 'string') {
+                    return sortDirection === 'asc'
+                    ? valueA.localeCompare(valueB)
+                    : valueB.localeCompare(valueA);
+                }
+                return sortDirection === 'asc' ? valueA - valueB : valueB - valueA;
                 });
             }
-            hostsDiv.innerHTML = "";
+
+            // Build a lookup for existing rows so we can reuse them if possible.
+            const existingRows = new Map();
+            hostsDiv.querySelectorAll('tr[data-id]').forEach(row => {
+                existingRows.set(row.getAttribute('data-id'), row);
+            });
+
+            const newFragment = document.createDocumentFragment();
+
+            // Iterate over the filtered hosts.
             filteredHosts.forEach(host => {
-                const row = document.createElement('tr');
-                const pingResults = host.last_responses || [];
-                const pingBarsHtml = `
-                    <div class="ping-results">
-                        ${(host.last_responses || Array(10).fill(null)).map(log => 
-                            `<div class="ping-bar ${
-                                log ? (log.success ? 'ping-success' : 'ping-failure') : 'ping-no-data'
-                            }"></div>`
-                        ).slice(0, 10).join('')}
-                    </div>
-                `;
+                // Try to get an existing row; if not, create a new one.
+                let row = existingRows.get(host.id) || document.createElement('tr');
                 row.setAttribute('data-id', host.id);
-                if (host.needs_notification) {
-                    if (host.is_up) {
-                        row.classList.add('flashing-up');
-                    } else {
-                        row.classList.add('flashing-down');
-                    }
-                }
-                row.innerHTML = `
-                    <td><input type="checkbox" class="select-host" data-id="${host.id}" ${selectedHosts.has(host.id) ? 'checked' : ''}></td>
-                    <td>
-                        <div class="status-circle ${!host.is_monitoring ? 'status-paused' : host.is_up ? 'status-up' : 'status-down'}"></div>
-                    </td>
-                    <td>${host.address}</td>
-                    <td>${host.dns_info || "N/A"}</td>
-                    <td>${host.ping_success_rate?.toFixed(0) ?? 0}%</td>
-                    <td class="ping-results-cell">${pingBarsHtml}</td>
-                    <td>${host.avg_latency ? host.avg_latency.toFixed(2) + 'ms' : 'N/A'}</td>
-                    <td>${formatNotificationMode(host.notification_mode)}</td>
-                    <td><button onclick="viewHostDetails('${host.id}')">ℹ️</button></td>
+
+                // Create the HTML for the ping bars.
+                const pingBarsHtml = `
+                <div class="ping-results">
+                    ${(host.last_responses || Array(10).fill(null)).map(log =>
+                    `<div class="ping-bar ${log ? (log.success ? 'ping-success' : 'ping-failure') : 'ping-no-data'}"></div>`
+                    ).slice(0, 10).join('')}
+                </div>
                 `;
+
+                // Update the row's inner HTML.
+                row.innerHTML = `
+                <td>
+                    <input type="checkbox" class="select-host" data-id="${host.id}" ${selectedHosts.has(host.id) ? 'checked' : ''}>
+                </td>
+                <td>
+                    <div class="status-circle ${!host.is_monitoring ? 'status-paused' : host.is_up ? 'status-up' : 'status-down'}"></div>
+                </td>
+                <td>${host.address}</td>
+                <td>${host.dns_info || "N/A"}</td>
+                <td>${host.ping_success_rate?.toFixed(0) ?? 0}%</td>
+                <td class="ping-results-cell">${pingBarsHtml}</td>
+                <td>${host.avg_latency ? host.avg_latency.toFixed(2) + 'ms' : 'N/A'}</td>
+                <td>${formatNotificationMode(host.notification_mode)}</td>
+                <td><button onclick="viewHostDetails('${host.id}')">ℹ️</button></td>
+                `;
+
+                // Add or update the event listener for the checkbox.
                 const checkbox = row.querySelector('.select-host');
-                checkbox.addEventListener('change', event => {
+                if (checkbox) {
+                // Remove any previous listener by assigning a new function.
+                checkbox.onchange = (event) => {
                     const hostId = event.target.dataset.id;
                     event.target.checked ? selectedHosts.add(hostId) : selectedHosts.delete(hostId);
-                });
-                hostsDiv.appendChild(row);
-            });
-            const hostIds = hosts.map(h => h.id);
-            hostsDiv.querySelectorAll('tr[data-id]').forEach(row => {
-                if (!hostIds.includes(row.getAttribute('data-id'))) {
-                    row.remove();
+                };
                 }
+
+                newFragment.appendChild(row);
+                // Remove the row from the lookup, as it’s been processed.
+                existingRows.delete(host.id);
             });
-        }
+
+            // Remove any remaining rows that no longer match filteredHosts.
+            existingRows.forEach(row => row.remove());
+
+            // Clear the container and append the new content.
+            hostsDiv.innerHTML = "";
+            hostsDiv.appendChild(newFragment);
+            }
+
 
         function formatNotificationMode(mode) {
             switch(mode) {
@@ -750,43 +784,52 @@
         }
         setInterval(updateLastUpdatedTime, 1000);
 
-        // Update the WebSocket handler:
         ws.onmessage = (event) => {
-            try {
-                const incomingHosts = JSON.parse(event.data);
-                const incomingHostsMap = new Map(incomingHosts.map(h => [h.id, h]));
-                
-                hostsData = hostsData.map(existingHost => {
-                    const incomingHost = incomingHostsMap.get(existingHost.id);
-                    if (incomingHost) {
-                        return {
-                            last_responses: Array(10).fill(null), // Initialize empty
-                            ...existingHost,
-                            ...incomingHost,
-                            last_responses: incomingHost.last_responses !== undefined 
-                                ? incomingHost.last_responses
-                                : existingHost.last_responses
-                        };
-                    }
-                    return existingHost;
-                });
+        try {
+            const incomingHosts = JSON.parse(event.data);
+            const incomingHostsMap = new Map(incomingHosts.map(h => [h.id, h]));
 
-                // Handle new hosts with proper initialization
-                incomingHosts.forEach(incomingHost => {
-                    if (!hostsData.some(h => h.id === incomingHost.id)) {
-                        hostsData.push({
-                            last_responses: Array(10).fill(null),
-                            ...incomingHost
-                        });
-                    }
-                });
+            const updatedHosts = [];
 
-                notificationHosts = hostsData.filter(h => h.needs_notification);
-                renderHosts(hostsData);
-                lastUpdateTime = Date.now();
-            } catch (error) {
-                console.error('Error parsing WebSocket data:', error);
+            // Update existing hosts in place.
+            hostsData.forEach(host => {
+            if (incomingHostsMap.has(host.id)) {
+                const incomingHost = incomingHostsMap.get(host.id);
+                Object.assign(host, incomingHost);
+                host.last_responses = incomingHost.last_responses || host.last_responses || Array(10).fill(null);
+                updatedHosts.push(host);
+                incomingHostsMap.delete(host.id);
             }
+            });
+
+            // Add new hosts.
+            incomingHostsMap.forEach((incomingHost) => {
+            const newHost = {
+                last_responses: incomingHost.last_responses || Array(10).fill(null),
+                ...incomingHost
+            };
+            updatedHosts.push(newHost);
+            });
+
+            hostsData = updatedHosts;
+
+            // Clean up selectedHosts for removed hosts.
+            const currentHostIds = new Set(hostsData.map(h => h.id));
+            selectedHosts.forEach(hostId => {
+            if (!currentHostIds.has(hostId)) {
+                selectedHosts.delete(hostId);
+            }
+            });
+
+            notificationHosts = hostsData.filter(h => h.needs_notification);
+
+            // Schedule a DOM update instead of rendering immediately.
+            scheduleRender();
+
+            lastUpdateTime = Date.now();
+        } catch (error) {
+            console.error('Error parsing WebSocket data:', error);
+        }
         };
 
         document.querySelectorAll('th.sortable').forEach(header => {
