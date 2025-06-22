@@ -4,25 +4,21 @@ import logging
 import sys
 import random
 import socket
-import struct
 import time
 import signal
-import aiodns
 import fastapi
 import uvicorn
 import os
-import socket
 import platform
 import psutil
 import getpass
 
 from fastapi import WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime
 from pythonping import ping
 
 DEBUG_MODE = True
@@ -181,6 +177,7 @@ class HostMonitor:
         self.websocket_clients = set()
         self.executor = ThreadPoolExecutor(max_workers=100)
         self.shutdown_event = None
+        
 
     async def start_monitoring(self, host, shutdown_event, initial_delay=0):
         """Start monitoring with configurable initial delay"""
@@ -435,10 +432,6 @@ class HostMonitor:
             await self.notify_clients()
             await asyncio.sleep(1)
         logger.debug(f"Stopped monitoring {host.address}")
-
-
-
-
 
 app = fastapi.FastAPI()
 host_monitor = HostMonitor()
