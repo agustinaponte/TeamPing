@@ -411,6 +411,10 @@
             </details>
             <button id="silenceButton" onclick="toggleSilence()">🔇</button>
             <button onclick="viewServerInfo()">ℹ️ Ver info del servidor</button>
+            <span>Ping cada: </span>
+            <input type="number" id="pingIntervalInput" step="0.1" min="1" placeholder="1.0" style="width: 80px;">
+            <span>s</span>
+            <button onclick="updatePingInterval()">✅</button>
         </div>
     </div>
 
@@ -463,7 +467,6 @@
             }, 100);
         }
         }
-
 
         function initAudio() {
             if (!isAudioInitialized) {
@@ -694,12 +697,7 @@
         }
 
         ws.onopen = () => {
-            fetch('/hosts')
-                .then(response => response.json())
-                .then(hosts => {
-                    hostsData = hosts;
-                    renderHosts(hostsData);
-                });
+            ws.send('refresh'); // Trigger initial data send
         };
 
         function toggleMonitoring(hostId, start) {
@@ -777,6 +775,29 @@
             }
         }
 
+        async function updatePingInterval() {
+            const input = document.getElementById('pingIntervalInput');
+            const interval = parseFloat(input.value);
+            if (isNaN(interval) || interval < 1) {
+                showStatusBar('Intervalo debe ser un número ≥ 1');
+                setTimeout(hideStatusBar, 2000);
+                return;
+            }
+            showStatusBar('Actualizando intervalo de ping...');
+            try {
+                const response = await fetch(`/settings/ping-interval?interval=${interval}`, {
+                    method: 'PUT'
+                });
+                if (!response.ok) throw new Error('Error al actualizar intervalo');
+                showStatusBar('Intervalo actualizado con éxito');
+                input.value = ''; // Clear input after success
+            } catch (error) {
+                showStatusBar(`Error: ${error.message}`);
+            } finally {
+                setTimeout(hideStatusBar, 2000);
+            }
+        }
+
         let lastUpdateTime = Date.now();
         function updateLastUpdatedTime() {
             const elapsedSeconds = Math.floor((Date.now() - lastUpdateTime) / 1000);
@@ -785,51 +806,42 @@
         setInterval(updateLastUpdatedTime, 1000);
 
         ws.onmessage = (event) => {
-        try {
-            const incomingHosts = JSON.parse(event.data);
-            const incomingHostsMap = new Map(incomingHosts.map(h => [h.id, h]));
-
-            const updatedHosts = [];
-
-            // Update existing hosts in place.
-            hostsData.forEach(host => {
-            if (incomingHostsMap.has(host.id)) {
-                const incomingHost = incomingHostsMap.get(host.id);
-                Object.assign(host, incomingHost);
-                host.last_responses = incomingHost.last_responses || host.last_responses || Array(10).fill(null);
-                updatedHosts.push(host);
-                incomingHostsMap.delete(host.id);
+            try {
+                const data = JSON.parse(event.data);
+                const incomingHosts = data.hosts;
+                const pingInterval = data.ping_interval;
+                const incomingHostsMap = new Map(incomingHosts.map(h => [h.id, h]));
+                const updatedHosts = [];
+                hostsData.forEach(host => {
+                    if (incomingHostsMap.has(host.id)) {
+                        const incomingHost = incomingHostsMap.get(host.id);
+                        Object.assign(host, incomingHost);
+                        host.last_responses = incomingHost.last_responses || host.last_responses || Array(10).fill(null);
+                        updatedHosts.push(host);
+                        incomingHostsMap.delete(host.id);
+                    }
+                });
+                incomingHostsMap.forEach((incomingHost) => {
+                    const newHost = {
+                        last_responses: incomingHost.last_responses || Array(10).fill(null),
+                        ...incomingHost
+                    };
+                    updatedHosts.push(newHost);
+                });
+                hostsData = updatedHosts;
+                const currentHostIds = new Set(hostsData.map(h => h.id));
+                selectedHosts.forEach(hostId => {
+                    if (!currentHostIds.has(hostId)) {
+                        selectedHosts.delete(hostId);
+                    }
+                });
+                notificationHosts = hostsData.filter(h => h.needs_notification);
+                document.getElementById('pingIntervalInput').placeholder = pingInterval.toFixed(1);
+                scheduleRender();
+                lastUpdateTime = Date.now();
+            } catch (error) {
+                console.error('Error parsing WebSocket data:', error);
             }
-            });
-
-            // Add new hosts.
-            incomingHostsMap.forEach((incomingHost) => {
-            const newHost = {
-                last_responses: incomingHost.last_responses || Array(10).fill(null),
-                ...incomingHost
-            };
-            updatedHosts.push(newHost);
-            });
-
-            hostsData = updatedHosts;
-
-            // Clean up selectedHosts for removed hosts.
-            const currentHostIds = new Set(hostsData.map(h => h.id));
-            selectedHosts.forEach(hostId => {
-            if (!currentHostIds.has(hostId)) {
-                selectedHosts.delete(hostId);
-            }
-            });
-
-            notificationHosts = hostsData.filter(h => h.needs_notification);
-
-            // Schedule a DOM update instead of rendering immediately.
-            scheduleRender();
-
-            lastUpdateTime = Date.now();
-        } catch (error) {
-            console.error('Error parsing WebSocket data:', error);
-        }
         };
 
         document.querySelectorAll('th.sortable').forEach(header => {

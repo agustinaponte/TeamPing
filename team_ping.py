@@ -177,7 +177,10 @@ class HostMonitor:
         self.websocket_clients = set()
         self.executor = ThreadPoolExecutor(max_workers=100)
         self.shutdown_event = None
-        
+        self.ping_interval = float(os.getenv("PING_INTERVAL", 10))  # Default 10 seconds
+        if self.ping_interval < 0.1:
+            logger.warning("PING_INTERVAL too low; setting to 1 second")
+            self.ping_interval = 1
 
     async def start_monitoring(self, host, shutdown_event, initial_delay=0):
         """Start monitoring with configurable initial delay"""
@@ -249,7 +252,7 @@ class HostMonitor:
                 'last_responses': last_responses
             }
             host_data.append(data)
-        return host_data
+        return {'hosts': host_data, 'ping_interval': self.ping_interval}
 
     async def notify_clients(self):
         if not self.websocket_clients:
@@ -430,8 +433,20 @@ class HostMonitor:
         while not shutdown_event.is_set() and host.is_monitoring:
             await self.ping_host(host)
             await self.notify_clients()
-            await asyncio.sleep(1)
+            await asyncio.sleep(self.ping_interval)
         logger.debug(f"Stopped monitoring {host.address}")
+
+    async def restart_all_monitoring(self):
+        """Restart all monitoring tasks with the current ping interval"""
+        logger.info("Restarting all monitoring tasks")
+        tasks = list(self.monitor_tasks.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.monitor_tasks.clear()
+        for host in self.hosts.values():
+            if host.is_monitoring:
+                await self.start_monitoring(host, self.shutdown_event)
 
 app = fastapi.FastAPI()
 host_monitor = HostMonitor()
@@ -571,6 +586,16 @@ async def set_notification_mode(host_id: str, mode: str = fastapi.Query(...)):
     
     await host_monitor.notify_clients()
     return {"status": "success"}
+
+@app.put("/settings/ping-interval")
+async def set_ping_interval(interval: float = fastapi.Query(...)):
+    if interval < 1:
+        raise fastapi.HTTPException(status_code=400, detail="Interval must be at least 1 second")
+    host_monitor.ping_interval = interval
+    await host_monitor.restart_all_monitoring()
+    await host_monitor.notify_clients()
+    logger.info(f"Ping interval updated to {interval} seconds")
+    return {"status": "success", "ping_interval": interval}
 
 @app.get("/")
 async def serve_frontend():
