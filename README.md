@@ -3,8 +3,11 @@
 **TeamPing** es una herramienta de seguimiento del estado de hosts, diseñada para ofrecer monitoreo en tiempo real y notificaciones personalizadas cuando un host se active o se caiga.  
 
 Ideal para equipos de infraestructura IT y profesionales del área, **TeamPing** envía pings continuos a los hosts especificados, rastrea su estado y notifica cualquier cambio de forma inmediata.  
+
 ---
+
 ## ¿Por qué usar TeamPing?
+
 TeamPing está pensado como una herramienta de monitoreo que puede implementarse rapidamente para trabajar de forma colaborativa en equipos de infraestructura. Puede ser útil en cambios de configuración, apagado o encendido de muchos equipos, situaciones donde tener una vista en tiempo real y de fácil configuración es útil para trabajar de forma más eficiente.
 
 Hay una gran cantidad de herramientas de monitoreo disponibles con una amplia variedad de configuraciones y funciones. Sin embargo, para algunas actividades estas herramientas pueden ser demasiado complejas o lentas de configurar.
