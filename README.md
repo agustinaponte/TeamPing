@@ -12,6 +12,8 @@ TeamPing está pensado como una herramienta de monitoreo que puede implementarse
 
 Hay una gran cantidad de herramientas de monitoreo disponibles con una amplia variedad de configuraciones y funciones. Sin embargo, para algunas actividades estas herramientas pueden ser demasiado complejas o lentas de configurar.
 
+Si tiene una lista de servidores preparada, es tan fácil como ejecutar TeamPing y pegar la lista de servidores en la interfaz web.
+
 ---
 
 ## 🚀 Características
