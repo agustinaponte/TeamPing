@@ -174,8 +174,17 @@
             animation: flash-green-white 2s infinite;
         }
         .flashing-down {
-            animation: flash-red-white 1s infinite;
+            animation: flash-red-white 2s infinite;
         }
+
+        .host-table tr.flashing-up {
+            animation: flash-green-white 2s infinite;
+        }
+
+        .host-table tr.flashing-down {
+            animation: flash-red-white 2s infinite;
+        }
+
         .button-group {
             display: flex;
             gap: 8px;
@@ -554,6 +563,11 @@
                 let row = existingRows.get(host.id) || document.createElement('tr');
                 row.setAttribute('data-id', host.id);
 
+                // ADD THIS: Determine if this row should be flashing
+                const shouldFlash = host.needs_notification && !isSilenced;
+                const flashClass = shouldFlash ? 
+                    (host.is_up ? 'flashing-up' : 'flashing-down') : '';
+
                 // Create the HTML for the ping bars.
                 const pingBarsHtml = `
                 <div class="ping-results">
@@ -563,7 +577,7 @@
                 </div>
                 `;
 
-                // Update the row's inner HTML.
+                // Update the row's inner HTML - ADD THE flashClass TO THE ROW
                 row.innerHTML = `
                 <td>
                     <input type="checkbox" class="select-host" data-id="${host.id}" ${selectedHosts.has(host.id) ? 'checked' : ''}>
@@ -580,6 +594,12 @@
                 <td><button onclick="viewHostDetails('${host.id}')">ℹ️</button></td>
                 `;
 
+                // ADD THIS: Apply or remove flashing classes
+                row.classList.remove('flashing-up', 'flashing-down');
+                if (flashClass) {
+                    row.classList.add(flashClass);
+                }
+
                 // Add or update the event listener for the checkbox.
                 const checkbox = row.querySelector('.select-host');
                 if (checkbox) {
@@ -591,7 +611,7 @@
                 }
 
                 newFragment.appendChild(row);
-                // Remove the row from the lookup, as it’s been processed.
+                // Remove the row from the lookup, as it's been processed.
                 existingRows.delete(host.id);
             });
 
@@ -601,8 +621,7 @@
             // Clear the container and append the new content.
             hostsDiv.innerHTML = "";
             hostsDiv.appendChild(newFragment);
-            }
-
+        }
 
         function formatNotificationMode(mode) {
             switch(mode) {
