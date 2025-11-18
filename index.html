@@ -15,6 +15,7 @@
             color: black;
             cursor: pointer;
             transition: background-color 0.2s, transform 0.1s;
+            flex-shrink: 0;
         }
 
         .controls {
@@ -67,6 +68,9 @@
             color: black;
             cursor: pointer;
             transition: background-color 0.2s, transform 0.1s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         button:hover {
@@ -185,17 +189,19 @@
         }
 
         .notification-dropdown summary {
-            display: block;
+            display: inline-flex;            /* keeps everything in one line */
+            align-items: center;            /* vertical centering */
+            padding: 5px 10px;              /* consistent with other buttons */
             height: 35px;
             line-height: 35px;
-            padding: 0 10px;
             margin: 0;
-            box-sizing: border-box;
+            box-sizing: border-box;            
             background-color: #f0f0f0;
             border: 1px solid #ccc;
             border-radius: 4px;
             transition: background-color 0.2s;
             cursor: pointer;
+            white-space: nowrap;            /* prevent wrapping */
         }
 
         .notification-dropdown[open] summary {
